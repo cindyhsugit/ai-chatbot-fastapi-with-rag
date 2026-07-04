@@ -30,7 +30,7 @@ import logging
 from logging_config import setup_logging
 
 # setup
-load_dotenv()
+load_dotenv("apiKey.env")
 
 # what does the client includes? what is the OpenAI class
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
