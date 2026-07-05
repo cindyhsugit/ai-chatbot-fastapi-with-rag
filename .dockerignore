@@ -1,0 +1,25 @@
+# Secrets - never bake these into the image
+apiKey.env
+.env
+
+# Virtual environment - container installs its own packages
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Git
+.git/
+.gitignore
+
+# Test artifacts
+.pytest_cache/
+
+# Editor/OS files
+.vscode/
+*.png
+*.jpg
+*.jpeg
+!static/**
