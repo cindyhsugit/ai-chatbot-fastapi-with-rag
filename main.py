@@ -72,44 +72,84 @@ def home(request: Request):
                                       context = {})
 
 # chat endpoint
-@app.post("/chat", response_model=ChatResponse)
-# when sends a message to /chat, run this function. response_model=ChatResponse tells FastAPI the reply should look like {"reply": "..."}.
-def chatAPIEndpoint(request: ChatRequest):
-    logger.info("chat start")
-    # calls an external API, and external calls can fail for lots of reasons, so wrapping that code in try / except keeps the server from crashing and lets you return a clean 500 error instead
-    try:
-        # takes the old messages, need to summarize or drop history if it gets too long 
-        messages = history
-        # adds the new user message to the list
-        messages.append({"role": "user", 
-                         "content": request.message})
-        # sends the conversation to the OpenAI model and asks for a reply. The chat-completions endpoint is how you ask the model to continue a message list.
-        response = client.chat.completions.create(
-            model = "gpt-4.1-mini",
-            messages = messages
-        )
-        # pulls out the actual text answer from the model’s response
-        first_choice = response.choices[0].message.content
-        if first_choice is not None:
-            reply = response.choices[0].message.content
-        else:
-            reply = "No answer returned."
+# @app.post("/chat", response_model=ChatResponse)
+# # when sends a message to /chat, run this function. response_model=ChatResponse tells FastAPI the reply should look like {"reply": "..."}.
+# def chatAPIEndpoint(request: ChatRequest):
+#     logger.info("chat start")
+#     # calls an external API, and external calls can fail for lots of reasons, so wrapping that code in try / except keeps the server from crashing and lets you return a clean 500 error instead
+#     try:
+#         # takes the old messages, need to summarize or drop history if it gets too long 
+#         messages = history
+#         # adds the new user message to the list
+#         messages.append({"role": "user", 
+#                          "content": request.message})
+#         # sends the conversation to the OpenAI model and asks for a reply. The chat-completions endpoint is how you ask the model to continue a message list.
+#         response = client.chat.completions.create(
+#             model = "gpt-4.1-mini",
+#             messages = messages
+#         )
+#         # pulls out the actual text answer from the model’s response
+#         first_choice = response.choices[0].message.content
+#         if first_choice is not None:
+#             reply = response.choices[0].message.content
+#         else:
+#             reply = "No answer returned."
 
-        # seperate user message and bot message?
-        # saves both the user message and the bot reply in memory so future replies can use them
-        history.append({"role":"user", 
-                        "content": request.message})
-        history.append({"role":"assistant", 
-                        "content": reply})
+#         # seperate user message and bot message?
+#         # saves both the user message and the bot reply in memory so future replies can use them
+#         history.append({"role":"user", 
+#                         "content": request.message})
+#         history.append({"role":"assistant", 
+#                         "content": reply})
 
-        logger.info("chat end")
-        # sends the reply back to the browser.
-        return {"reply": reply}
-    # If something goes wrong, this turns the problem into a clean HTTP 500 error instead of crashing silently. FastAPI uses HTTPException for this kind of controlled failure.
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+#         logger.info("chat end")
+#         # sends the reply back to the browser.
+#         return {"reply": reply}
+#     # If something goes wrong, this turns the problem into a clean HTTP 500 error instead of crashing silently. FastAPI uses HTTPException for this kind of controlled failure.
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+import rag_tasks
+import json
+
+# use retrieval
+@app.post("/chat")
+def chat(request: ChatRequest):
+
+    # grab the pages most related to what the user asked
+    relevant_chunks = rag_tasks.retrieve(request.message)
+    
+    # staples them all into one single block of text, 
+    # with a blank line between each card (\n\n means "new line, new line)
+    context = "\n\n".join(relevant_chunks)
+
+    augmented_message = f"""Answer the question using only the context below.
+            If the answer isn't in the context, say you don't know.
+
+            Context:
+            {context}
+
+            Question: {request.message}
+            """
+
+    # Send prior conversation history + this turn's augmented question
+    messages_to_send = history + [{"role": "user", "content": augmented_message}]
+
+    print(json.dumps(messages_to_send, indent=2))
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages_to_send
+    )
+    reply = response.choices[0].message.content
+    # Save the CLEAN question (not the augmented version) and the reply
+    history.append({"role": "user", "content": request.message})
+    history.append({"role": "assistant", "content": reply})
+
+    return {"reply": reply}
+
 
 # a tiny check route. If it returns {"status": "ok"}, the server is alive.
 @app.get("/health")
@@ -123,3 +163,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
+    
