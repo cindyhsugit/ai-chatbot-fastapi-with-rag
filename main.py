@@ -19,6 +19,7 @@ import os
 
 #  client for the OpenAI API
 from openai import OpenAI
+from openai import AsyncOpenAI
 
 # loads secrets from a .env file
 from dotenv import load_dotenv
@@ -33,8 +34,10 @@ from logging_config import setup_logging
 load_dotenv("apiKey.env")
 load_dotenv(".env")
 
-# what does the client includes? what is the OpenAI class
+# OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# OpenAI async client
+async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # set up logs
 setup_logging()
@@ -72,55 +75,18 @@ def home(request: Request):
                                       name = "index.html", 
                                       context = {})
 
-# chat endpoint
-# @app.post("/chat", response_model=ChatResponse)
-# # when sends a message to /chat, run this function. response_model=ChatResponse tells FastAPI the reply should look like {"reply": "..."}.
-# def chatAPIEndpoint(request: ChatRequest):
-#     logger.info("chat start")
-#     # calls an external API, and external calls can fail for lots of reasons, so wrapping that code in try / except keeps the server from crashing and lets you return a clean 500 error instead
-#     try:
-#         # takes the old messages, need to summarize or drop history if it gets too long 
-#         messages = history
-#         # adds the new user message to the list
-#         messages.append({"role": "user", 
-#                          "content": request.message})
-#         # sends the conversation to the OpenAI model and asks for a reply. The chat-completions endpoint is how you ask the model to continue a message list.
-#         response = client.chat.completions.create(
-#             model = "gpt-4.1-mini",
-#             messages = messages
-#         )
-#         # pulls out the actual text answer from the model’s response
-#         first_choice = response.choices[0].message.content
-#         if first_choice is not None:
-#             reply = response.choices[0].message.content
-#         else:
-#             reply = "No answer returned."
-
-#         # seperate user message and bot message?
-#         # saves both the user message and the bot reply in memory so future replies can use them
-#         history.append({"role":"user", 
-#                         "content": request.message})
-#         history.append({"role":"assistant", 
-#                         "content": reply})
-
-#         logger.info("chat end")
-#         # sends the reply back to the browser.
-#         return {"reply": reply}
-#     # If something goes wrong, this turns the problem into a clean HTTP 500 error instead of crashing silently. FastAPI uses HTTPException for this kind of controlled failure.
-#     except HTTPException as e:
-#         raise e
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
 
 import rag_tasks
 import json
 
 # use retrieval
 @app.post("/chat")
-def chat(request: ChatRequest):
+async def chat(request: ChatRequest):
 
     # grab the pages most related to what the user asked
-    relevant_chunks = rag_tasks.retrieve(request.message)
+    # pause and wait for rag_task to finish
+    # hand out the controller
+    relevant_chunks = await rag_tasks.retrieve_async(request.message)
     
     # staples them all into one single block of text, 
     # with a blank line between each card (\n\n means "new line, new line)
@@ -138,9 +104,10 @@ def chat(request: ChatRequest):
     # Send prior conversation history + this turn's augmented question
     messages_to_send = history + [{"role": "user", "content": augmented_message}]
 
+    # debugging purpose
     print(json.dumps(messages_to_send, indent=2))
 
-    response = client.chat.completions.create(
+    response = await async_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages_to_send
     )

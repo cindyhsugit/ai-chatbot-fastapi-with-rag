@@ -4,6 +4,7 @@ load_dotenv("apiKey.env")
 import os
 from pathlib import Path
 from openai import OpenAI
+from openai import AsyncOpenAI
 import faiss
 import numpy as np
 
@@ -20,6 +21,7 @@ def chunk_text(text, chunk_size=500):
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# using open AI's embedding model
 def get_embedding(text):
     response = client.embeddings.create(
         model="text-embedding-3-small",
@@ -27,10 +29,18 @@ def get_embedding(text):
     )
     return response.data[0].embedding
 
+# different flavor with async 
+async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+async def get_embedding_async(text):
+    response = await async_client.embeddings.create(model="text-embedding-3-small", 
+                                                    input=text
+    )
+    return response.data[0].embedding
+                                                    
 
 # Retrieve relevant chunks for a new question
-def retrieve(question, k=3):
-    question_embedding = get_embedding(question)
+async def retrieve_async(question, k=3):
+    question_embedding = await get_embedding_async(question)
     distances, indices = index.search(
         np.array([question_embedding]).astype("float32"), k
     )

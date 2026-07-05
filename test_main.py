@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 import pytest
-import main
+from main import app
 
-client = TestClient(main.app)
+client = TestClient(app)
 
 def test_healthAPIEndpoint():
     response = client.get("/health")
@@ -19,26 +19,13 @@ def test_chatAPIEndpointTestClient():
     assert isinstance(data["reply"], str)
     assert data["reply"] != ""
     
-
-def test_chatAPIEndpointTestDirect():
-    request = main.ChatRequest(message="hello")
-    response = main.chatAPIEndpoint(request)
-    
-    assert "reply" in response
-    assert isinstance(response["reply"], str)
-    assert response["reply"].strip() != ""
-
-
-from unittest.mock import patch, MagicMock
-def test_chatAPIEndpointTestDirect_patch():
-    request = main.ChatRequest(message="hello")
-
-    mock_openai_response = MagicMock()
-    mock_openai_response.choices = [
-        MagicMock(message=MagicMock(content="fake reply"))
+@patch("main.async_client.chat.completions.create", new_callable=AsyncMock)
+@patch("main.rag_tasks.retrieve_async", new_callable=AsyncMock)
+def test_chat_returns_reply(mock_retrieve, mock_create):
+    mock_retrieve.return_value = ["Test context chunk."]
+    mock_create.return_value.choices = [
+        type("Choice", (), {"message": type("Msg", (), {"content": "Test reply"})()})
     ]
-
-    with patch("main.client.chat.completions.create", return_value=mock_openai_response):
-        response = main.chatAPIEndpoint(request)
-
-    assert response == {"reply": "fake reply"}
+    response = client.post("/chat", json={"message": "What is this about?"})
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Test reply"
