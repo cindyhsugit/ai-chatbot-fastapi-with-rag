@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv("apiKey.env")
 
 import os
+from pathlib import Path
 from openai import OpenAI
 import faiss
 import numpy as np
@@ -38,8 +39,10 @@ def retrieve(question, k=3):
 if __name__ == "__main__":
      print("This file builds a search index when imported — run main.py instead of this file directly.")
 else:
-    # Generate embeddings for each chunk
-    chunks = chunk_text(open("the_simpsons_summary.md", encoding="utf-8").read())
+    filename = os.environ["INPUT_FILE"]
+    text = Path(filename).read_text(encoding="utf-8")
+   # Generate embeddings for each chunk
+    chunks = chunk_text(text)
     # Turn each chunk into an embedding (a list of numbers representing
     # its meaning)
     embeddings = [get_embedding(chunk) for chunk in chunks]
