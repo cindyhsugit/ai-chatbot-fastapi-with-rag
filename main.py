@@ -105,7 +105,7 @@ async def chat(request: ChatRequest):
     messages_to_send = history + [{"role": "user", "content": augmented_message}]
 
     # debugging purpose
-    print(json.dumps(messages_to_send, indent=2))
+    #print(json.dumps(messages_to_send, indent=2))
 
     response = await async_client.chat.completions.create(
         model="gpt-4o-mini",
@@ -131,5 +131,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
-    print("this is the feature branch")
+    
     

@@ -7,6 +7,8 @@ from openai import OpenAI
 from openai import AsyncOpenAI
 import faiss
 import numpy as np
+import embeddings_hf as Embeddings_HF
+import reranker_hf as Reranker_HF
 
 # Chunk text
 # chunk_text(text: str, chunk_size: int = 500) -> List[str]:
@@ -22,26 +24,31 @@ def chunk_text(text, chunk_size=500):
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# using open AI's embedding model
+
 # get_embedding(text: str) -> List[float]:
 def get_embedding(text):
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text
-    )
-    return response.data[0].embedding
+    # using open AI's embedding model
+    # response = client.embeddings.create(
+    #     model="text-embedding-3-small",
+    #     input=text
+    # )
+    # return_list = response.data[0].embedding
+    # replace with huggingFace embedding module
+    return_list = Embeddings_HF.embed_texts([text])[0] 
+    print(f"Embedding dimension: {len(return_list)}")  # should print 384
+    
+    return return_list
 
 # different flavor with async 
 async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 async def get_embedding_async(text):
-    response = await async_client.embeddings.create(model="text-embedding-3-small", 
-                                                    input=text
-    )
-    return response.data[0].embedding
+   # was: response = await async_client.embeddings.create(model="text-embedding-3-small", input=text)
+    return_list = Embeddings_HF.embed_texts([text])[0]
+    return return_list
                                                     
 
 # Retrieve relevant chunks for a new question
-async def retrieve_async(question, k=3):
+async def retrieve_async(question, k=20):
     # question_embedding -> [0.0119, -0.0440, 0.0801, ...]   (1536 floats, similar to chunk 0's embedding)
     question_embedding = await get_embedding_async(question)
     
@@ -51,15 +58,19 @@ async def retrieve_async(question, k=3):
     #  -1 = "no third result" since we only have 2 chunks stored but asked for k=3
     # distances -> array([[0.0012, 0.1583, some_huge_or_placeholder_number]])
     distances, indices = index.search(
-        np.array([question_embedding]).astype("float32"), k
-    )
+        np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
     # chunks[0] -> "apple"
     # chunks[1] -> "banana"
     # For each number i inside indices[0], go grab chunks[i] 
     # result -> ["apple", "banana", <IndexError risk on -1!>]
     result = [chunks[i] for i in indices[0]]
-    return result
+
+    reranked_chunks = Reranker_HF.rerank(question, result, top_k=3) # back down to 3 for generation
+    print(f"Before rerank: {len(result)} chunks")
+    print(f"After rerank: {len(reranked_chunks)} chunks")
+    # now use reranked_chunks (not retrieved_chunks) when building the prompt for generation
+    return reranked_chunks
 
 if __name__ == "__main__":
      print("This file builds a search index when imported — run main.py instead of this file directly.")
@@ -83,14 +94,14 @@ else:
     #     [0.0123, -0.0456, 0.0788, ...],   <- embedding for chunk 0 (1536 floats)
     #     [0.0341,  0.0021, -0.0999, ...],  <- embedding for chunk 1 (1536 floats)
     # ]
-    # Shape: 2 chunks x 1536 numbers each
+    # Shape: 2 chunks x 384 numbers each
     # embeddings: List[List[float]] = [get_embedding(chunk) for chunk in chunks]
     embeddings = [get_embedding(chunk) for chunk in chunks]
 
     # Build the vector index (do this once, at startup or as a script)
     # dimension: int = len(embeddings[0])
     # len(embeddings[0]) = len([0.0123, -0.0456, 0.0788, ...]) = 1536
-    # dimension = 1536
+    # dimension = 384
     dimension = len(embeddings[0])
 
     # Create an empty FAISS "filing cabinet" sized to hold embeddings
