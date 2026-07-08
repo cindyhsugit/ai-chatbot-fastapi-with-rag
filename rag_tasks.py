@@ -10,6 +10,7 @@ import numpy as np
 import embeddings_hf as Embeddings_HF
 import reranker_hf as Reranker_HF
 
+
 # Chunk text
 # chunk_text(text: str, chunk_size: int = 500) -> List[str]:
 def chunk_text(text, chunk_size=500):
@@ -22,7 +23,7 @@ def chunk_text(text, chunk_size=500):
 
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+#client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # get_embedding(text: str) -> List[float]:
@@ -45,7 +46,8 @@ async def get_embedding_async(text):
    # was: response = await async_client.embeddings.create(model="text-embedding-3-small", input=text)
     return_list = Embeddings_HF.embed_texts([text])[0]
     return return_list
-                                                    
+
+                                                 
 
 # Retrieve relevant chunks for a new question
 async def retrieve_async(question, k=20):

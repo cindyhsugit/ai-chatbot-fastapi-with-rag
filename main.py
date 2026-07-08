@@ -29,6 +29,8 @@ from pathlib import Path
 
 import logging
 from logging_config import setup_logging
+import gemini_provider
+
 
 # setup
 load_dotenv("apiKey.env")
@@ -38,6 +40,7 @@ load_dotenv(".env")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # OpenAI async client
 async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+ 
 
 # set up logs
 setup_logging()
@@ -105,17 +108,18 @@ async def chat(request: ChatRequest):
     messages_to_send = history + [{"role": "user", "content": augmented_message}]
 
     # debugging purpose
-    #print(json.dumps(messages_to_send, indent=2))
+    #print(json.dumps(messages_to_send, indent=2))  
+   
+    # response = await async_client.chat.completions.create(
+    #     model="gpt-4o-mini",
+    #     messages=messages_to_send
+    # )
+    # reply = response.choices[0].message.content
+    # # Save the CLEAN question (not the augmented version) and the reply
+    # history.append({"role": "user", "content": request.message})
+    # history.append({"role": "assistant", "content": reply})
 
-    response = await async_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages_to_send
-    )
-    reply = response.choices[0].message.content
-    # Save the CLEAN question (not the augmented version) and the reply
-    history.append({"role": "user", "content": request.message})
-    history.append({"role": "assistant", "content": reply})
-
+    reply = gemini_provider.generate_answer_gemini(augmented_message)
     return {"reply": reply}
 
 
