@@ -16,8 +16,14 @@ import reranker_hf as Reranker_HF
 def chunk_text(text, chunk_size=500):
     words = text.split()
     chunks = []
+    # range(start, stop, step) — here start=0, stop=len(words) 
+    # (the total number of words), step=chunk_size (500)
     for i in range(0, len(words), chunk_size):
-        chunk = " ".join(words[i:i + chunk_size])
+       
+        # grab words starting at position i, up to (but not including) position i + chunk_size
+        slicedWords = words[i:i + chunk_size]
+
+        chunk = " ".join(slicedWords)
         chunks.append(chunk)
     return chunks
 
@@ -41,18 +47,18 @@ def get_embedding(text):
     return return_list
 
 # different flavor with async 
-async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-async def get_embedding_async(text):
-   # was: response = await async_client.embeddings.create(model="text-embedding-3-small", input=text)
-    return_list = Embeddings_HF.embed_texts([text])[0]
-    return return_list
+# async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# async def get_embedding_async(text):
+#    # was: response = await async_client.embeddings.create(model="text-embedding-3-small", input=text)
+#     return_list = Embeddings_HF.embed_texts([text])[0]
+#     return return_list
 
                                                  
 
 # Retrieve relevant chunks for a new question
-async def retrieve_async(question, k=20):
+def retrieve(question, k=20):
     # question_embedding -> [0.0119, -0.0440, 0.0801, ...]   (1536 floats, similar to chunk 0's embedding)
-    question_embedding = await get_embedding_async(question)
+    question_embedding = get_embedding(question)
     
     # indices -> array([[0, 1, -1]])   <- FAISS returns positions in the index
     #   0 = chunk 0 ("The sky is blue.") was the closest match
