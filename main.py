@@ -87,8 +87,7 @@ import json
 async def chat(request: ChatRequest):
 
     # grab the pages most related to what the user asked
-    # pause and wait for rag_task to finish
-    # hand out the controller
+    # relevant_chunks : list[str]
     relevant_chunks = rag_tasks.retrieve(request.message)
     
     # staples them all into one single block of text, 

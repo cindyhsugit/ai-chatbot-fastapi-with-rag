@@ -56,6 +56,7 @@ def get_embedding(text):
                                                  
 
 # Retrieve relevant chunks for a new question
+# def retrieve(question: str, k: int = 20) -> list[str]:
 def retrieve(question, k=20):
     # question_embedding -> [0.0119, -0.0440, 0.0801, ...]   (1536 floats, similar to chunk 0's embedding)
     question_embedding = get_embedding(question)
