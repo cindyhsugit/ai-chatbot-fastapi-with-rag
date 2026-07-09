@@ -59,6 +59,10 @@ async def retrieve_async(question, k=20):
     #   1 = chunk 1 was second closest
     #  -1 = "no third result" since we only have 2 chunks stored but asked for k=3
     # distances -> array([[0.0012, 0.1583, some_huge_or_placeholder_number]])
+    # how far away that vector was from your query vector
+    #  could be useful for debugging or setting a "confidence threshold" — e.g., 
+    # "if even the closest match has a huge distance, 
+    #  maybe there's no relevant document at all
     distances, indices = index.search(
         np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
@@ -68,6 +72,10 @@ async def retrieve_async(question, k=20):
     # result -> ["apple", "banana", <IndexError risk on -1!>]
     result = [chunks[i] for i in indices[0]]
 
+    # question -> "what's homer's favorite food" (str)
+    # result -> ["chunk about donuts...", "chunk about broccoli...", ... ] (list[str], 20 items)
+    # top_k=3 -> how many we want back after reranking
+    # reranked_chunks -> ["chunk about broccoli...", "chunk about donuts...", "chunk about..."] (list[str], 3 items, reordered by relevance)
     reranked_chunks = Reranker_HF.rerank(question, result, top_k=3) # back down to 3 for generation
     print(f"Before rerank: {len(result)} chunks")
     print(f"After rerank: {len(reranked_chunks)} chunks")
@@ -103,7 +111,7 @@ else:
     # Build the vector index (do this once, at startup or as a script)
     # dimension: int = len(embeddings[0])
     # len(embeddings[0]) = len([0.0123, -0.0456, 0.0788, ...]) = 1536
-    # dimension = 384
+    # dimension = 384 for huggingface
     dimension = len(embeddings[0])
 
     # Create an empty FAISS "filing cabinet" sized to hold embeddings
