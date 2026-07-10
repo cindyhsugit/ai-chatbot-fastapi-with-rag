@@ -73,14 +73,24 @@ def retrieve(question, k=20):
     distances, indices = index.search(
         np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
+    # indices[0] = [5, 12, 3, 8, 19, 0, 45, ...]  # 20 numbers total
     # chunks[0] -> "apple"
     # chunks[1] -> "banana"
     # For each number i inside indices[0], go grab chunks[i] 
     # result -> ["apple", "banana", <IndexError risk on -1!>]
-    result = [chunks[i] for i in indices[0]]
+
+    result = []
+    #  the first and only row, just 1 question now...
+    for i in indices[0]:
+        matching_chunk = chunks[i]
+        result.append(matching_chunk)
+
+    #list comprehension style 
+    #result = [chunks[i] for i in indices[0]]
 
     # question -> "what's homer's favorite food" (str)
     # result -> ["chunk about donuts...", "chunk about broccoli...", ... ] (list[str], 20 items)
+    
     # top_k=3 -> how many we want back after reranking
     # reranked_chunks -> ["chunk about broccoli...", "chunk about donuts...", "chunk about..."] (list[str], 3 items, reordered by relevance)
     reranked_chunks = Reranker_HF.rerank(question, result, top_k=3) # back down to 3 for generation

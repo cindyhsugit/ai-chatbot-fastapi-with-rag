@@ -31,6 +31,7 @@ import logging
 from logging_config import setup_logging
 import gemini_provider
 
+import time
 
 # setup
 load_dotenv("apiKey.env")
@@ -80,7 +81,6 @@ def home(request: Request):
 
 
 import rag_tasks
-import json
 
 # use retrieval
 @app.post("/chat")
@@ -102,7 +102,7 @@ async def chat(request: ChatRequest):
 
             Question: {request.message}
             """
-
+    print(f"Prompt length: {len(augmented_message)} characters")
     # Send prior conversation history + this turn's augmented question
     messages_to_send = history + [{"role": "user", "content": augmented_message}]
 
@@ -117,8 +117,20 @@ async def chat(request: ChatRequest):
     # # Save the CLEAN question (not the augmented version) and the reply
     # history.append({"role": "user", "content": request.message})
     # history.append({"role": "assistant", "content": reply})
-
-    reply = gemini_provider.generate_answer_gemini(augmented_message)
+    
+    try:
+        start = time.time()
+        reply = await gemini_provider.generate_answer_gemini(augmented_message)
+        end = time.time()
+        print(f"Time taken: {end - start:.2f} seconds")
+    except Exception as e:
+        print(f"Gemini failed: {e}, falling back to OpenAI")
+        response = await async_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages_to_send
+        )
+        reply = response.choices[0].message.content
+        #return await openai_provider.generate_answer_openai(prompt)
     return {"reply": reply}
 
 

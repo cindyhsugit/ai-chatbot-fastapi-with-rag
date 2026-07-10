@@ -20,5 +20,15 @@ def rerank(query: str, candidates: list[str], top_k: int = 5) -> list[str]:
     # Sort candidates by score, descending
     scored = list(zip(candidates, scores))
     scored.sort(key=lambda x: x[1], reverse=True)
+    # scored looks like
+    #[
+    #   ("chunk A", 0.95),
+    #   ("chunk B", 0.90),
+    #   ("chunk C", 0.80)
+    # ]
 
-    return [text for text, score in scored[:top_k]]
+    result = []
+    for text, score in scored[:top_k]:
+        result.append(text)
+    # result would look like ["chunk A", "chunk B"]
+    return result
