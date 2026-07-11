@@ -9,7 +9,7 @@ import faiss
 import numpy as np
 import embeddings_hf as Embeddings_HF
 import reranker_hf as Reranker_HF
-
+import time
 
 # Chunk text
 # chunk_text(text: str, chunk_size: int = 500) -> List[str]:
@@ -70,8 +70,11 @@ def retrieve(question, k=20):
     #  could be useful for debugging or setting a "confidence threshold" — e.g., 
     # "if even the closest match has a huge distance, 
     #  maybe there's no relevant document at all
+    start = time.time()
     distances, indices = index.search(
         np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
+    end = time.time()
+    print(f"-- FAISS index search Time: {end-start:.2f}s")
 
     # indices[0] = [5, 12, 3, 8, 19, 0, 45, ...]  # 20 numbers total
     # chunks[0] -> "apple"
@@ -93,9 +96,11 @@ def retrieve(question, k=20):
     
     # top_k=3 -> how many we want back after reranking
     # reranked_chunks -> ["chunk about broccoli...", "chunk about donuts...", "chunk about..."] (list[str], 3 items, reordered by relevance)
+    start = time.time()
     reranked_chunks = Reranker_HF.rerank(question, result, top_k=3) # back down to 3 for generation
-    print(f"Before rerank: {len(result)} chunks")
-    print(f"After rerank: {len(reranked_chunks)} chunks")
+    end = time.time()
+    print(f"-- -- Hugging face cross encoder Time: {end-start:.2f}s")
+
     # now use reranked_chunks (not retrieved_chunks) when building the prompt for generation
     return reranked_chunks
 
@@ -105,11 +110,13 @@ else:
     filename = os.environ["INPUT_FILE"]
     text = Path(filename).read_text(encoding="utf-8")
    
+    start = time.time()
     # Generate embeddings for each chunk
     # chunks: List[str] = chunk_text(text)
     # example: ["apple", "banana"]
     chunks = chunk_text(text)
-
+    end = time.time()
+    print(f"chunk_text Time: {end-start:.2f}s")
 
     # Turn each chunk into an embedding (a list of numbers representing
     # its meaning)
@@ -121,9 +128,17 @@ else:
     #     [0.0123, -0.0456, 0.0788, ...],   <- embedding for chunk 0 (1536 floats)
     #     [0.0341,  0.0021, -0.0999, ...],  <- embedding for chunk 1 (1536 floats)
     # ]
-    # Shape: 2 chunks x 384 numbers each
+    # Shape: 2 chunks x 384 numbers each for hugging face
     # embeddings: List[List[float]] = [get_embedding(chunk) for chunk in chunks]
-    embeddings = [get_embedding(chunk) for chunk in chunks]
+    embeddings = []
+    start = time.time()
+    for chunk in chunks:
+        embedding = get_embedding(chunk)
+        embeddings.append(embedding)
+    end = time.time()
+    print(f"hugging face embedding Time: {end-start:.2f}s")
+    #list comprehension version
+    # embeddings = [get_embedding(chunk) for chunk in chunks]
 
     # Build the vector index (do this once, at startup or as a script)
     # dimension: int = len(embeddings[0])

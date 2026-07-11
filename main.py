@@ -88,8 +88,11 @@ async def chat(request: ChatRequest):
 
     # grab the pages most related to what the user asked
     # relevant_chunks : list[str]
+    start = time.time()
     relevant_chunks = rag_tasks.retrieve(request.message)
-    
+    end = time.time()
+    print(f"Retrieval Process Till Augmentation Time taken: {end - start:.2f} seconds")
+   
     # staples them all into one single block of text, 
     # with a blank line between each card (\n\n means "new line, new line)
     context = "\n\n".join(relevant_chunks)
@@ -122,13 +125,17 @@ async def chat(request: ChatRequest):
         start = time.time()
         reply = await gemini_provider.generate_answer_gemini(augmented_message)
         end = time.time()
-        print(f"Time taken: {end - start:.2f} seconds")
+        print(f"Gemini LLM Response Time taken: {end - start:.2f} seconds")
     except Exception as e:
         print(f"Gemini failed: {e}, falling back to OpenAI")
+        start = time.time()
         response = await async_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages_to_send
         )
+        end = time.time()
+        print(f"Open AI LLM Response Time taken: {end - start:.2f} seconds")
+  
         reply = response.choices[0].message.content
         #return await openai_provider.generate_answer_openai(prompt)
     return {"reply": reply}
