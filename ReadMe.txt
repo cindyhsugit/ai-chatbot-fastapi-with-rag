@@ -9,3 +9,11 @@
   curl command "curl -X POST http://127.0.0.1:8000/chat -H 
                 "Content-Type: application/json" -d '{\"message\": \"Question.....\"}'"
     
+
+
+note: some timing test results to pointout
+chunk_text: 0.00s
+HuggingFace embedding: 0.12s 
+FAISS search: 0.00s 
+Cross-encoder rerank: 1.04s
+Gemini generation: 9.30s 
