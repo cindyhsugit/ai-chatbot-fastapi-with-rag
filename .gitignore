@@ -3,3 +3,8 @@ apiKey.env
 
 __pycache__/
 *.pyc
+
+# ChromaDB local vector store - regenerated data, not source
+chroma_data/
+*.sqlite3
+*.bin
