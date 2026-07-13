@@ -4,29 +4,78 @@
   <meta charset="utf-8">
   <title>Chat App</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+  <style>
+    .spinner {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+      color: #666;
+      font-style: italic;
+    }
+    .spinner::before {
+      content: "";
+      width: 16px;
+      height: 16px;
+      border: 2px solid #ddd;
+      border-top: 2px solid #333;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
   <div class="chat-box">
     <div id="messages"></div>
     <input id="msg" placeholder="Type a message..." />
-    <button onclick="sendMsg()">Send</button>
+    <button id="send-btn" onclick="sendMsg()">Send</button>
   </div>
 
   <script>
     async function sendMsg() {
-	console.log("button clicked");
+      console.log("button clicked");
       const message = document.getElementById("msg").value;
-      const res = await fetch("/chat", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ message })
-      });
-      const data = await res.json();
-      document.getElementById("messages").innerHTML +=
-        `<p><b>You:</b> ${message}</p><p><b>Bot:</b> ${data.reply}</p>`;
+      if (!message.trim()) return;
+
+      const messagesDiv = document.getElementById("messages");
+      const sendBtn = document.getElementById("send-btn");
+
+      // show the user's message immediately
+      messagesDiv.innerHTML += `<p><b>You:</b> ${message}</p>`;
       document.getElementById("msg").value = "";
-	console.log(data);
+
+      // add spinner placeholder, keep a reference so we can remove just this one
+      const spinnerId = "spinner-" + Date.now();
+      messagesDiv.innerHTML += `<p id="${spinnerId}" class="spinner">Thinking...</p>`;
+      sendBtn.disabled = true;
+
+      try {
+        const res = await fetch("/chat", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+
+        document.getElementById(spinnerId).outerHTML =
+          `<p><b>Bot:</b> ${data.reply}</p>`;
+        console.log(data);
+      } catch (err) {
+        document.getElementById(spinnerId).outerHTML =
+          `<p><b>Bot:</b> Something went wrong. Please try again.</p>`;
+        console.error(err);
+      } finally {
+        sendBtn.disabled = false;
+      }
     }
+
+    // allow Enter key to send
+    document.getElementById("msg").addEventListener("keypress", function(e) {
+      if (e.key === "Enter") sendMsg();
+    });
   </script>
 </body>
 </html>
