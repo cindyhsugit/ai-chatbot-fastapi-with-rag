@@ -35,6 +35,8 @@ import time
 
 from web_search_provider import web_search_fallback
 
+from prompt_rules import CONTEXT_ONLY_RULE, CONTEXT_TRAINED_DATA_ONLY_RULE
+
 # setup
 load_dotenv("apiKey.env")
 load_dotenv(".env")
@@ -107,23 +109,6 @@ async def generate_with_network_failover (prompt: str, messages_override: list =
         print(f"Gemini response time: {elapsed:.2f} seconds")
         return reply
 
-def construct_noknowledge_prompt(question: str, web_results: str) -> str:
-    """
-    Builds the fallback prompt used after NO_KNOWLEDGE fires and web
-    search has run. Grounds the answer strictly in the web snippets,
-    with an instruction to admit gaps concisely rather than padding
-    with unrelated context details.
-    """
-    return f"""
-    Answer the question using ONLY the context below.
-    If the context does not directly answer the question, say so in one sentence —
-    do not list unrelated details from the context.
-
-    Context:
-    {web_results}
-
-    Question: {question}
-    """
 
 async def generate_with_knowledge_failover(question: str, prompt: str) -> str:
     """
@@ -139,33 +124,24 @@ async def generate_with_knowledge_failover(question: str, prompt: str) -> str:
         if not web_results:
             return "I don't know - no local context, no trained knowledge, and web search returned nothing."
 
-        grounded_prompt = construct_noknowledge_prompt(question, web_results)
+        grounded_prompt = construct_prompt(CONTEXT_ONLY_RULE, question, web_results)
         
         reply = await generate_with_network_failover (grounded_prompt)
         reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
 
     return reply
 
-def construct_prompt(question: str, context: str) -> str:
-    """
-    Builds the augmented prompt sent to the LLM: instructs it to use
-    context first, fall back to trained knowledge if confident, and
-    signal NO_KNOWLEDGE if neither applies.
-    """
+
+def construct_prompt(rules: str, context: str, question: str) -> str:
     return f"""
-    Answer the question using the context below if it contains the answer.
+{rules}
 
-    If the context does NOT contain the answer, you may answer using your own
-    trained knowledge instead — but only if you are confident and not guessing.
+Context:
+{context}
 
-    If neither the context nor your own reliable knowledge can answer this
-    question, respond with exactly: NO_KNOWLEDGE
+Question: {question}
+"""
 
-    Context:
-    {context}
-
-    Question: {question}
-    """
 
 # use retrieval
 @app.post("/chat")
@@ -182,7 +158,7 @@ async def chat(request: ChatRequest):
     # with a blank line between each card (\n\n means "new line, new line)
     context = "\n\n".join(relevant_chunks)
 
-    augmented_message = construct_prompt(request.message, context)
+    augmented_message = construct_prompt(CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context)
    
     print(f"Prompt length: {len(augmented_message)} characters")
     # Send prior conversation history + this turn's augmented question
