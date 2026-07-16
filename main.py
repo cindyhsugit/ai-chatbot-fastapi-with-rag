@@ -117,7 +117,9 @@ async def generate_with_knowledge_failover(question: str, prompt: str) -> str:
     regeneration (also via generate_with_failover, so failover applies
     to that call too).
     """
-    reply = await generate_with_network_failover (prompt)
+    messages_to_send = history + [{"role": "user", "content": prompt}]
+    
+    reply = await generate_with_network_failover (prompt, messages_to_send)
     if reply.strip() == "NO_KNOWLEDGE":
         web_results = await web_search_fallback(question)
 
@@ -128,7 +130,7 @@ async def generate_with_knowledge_failover(question: str, prompt: str) -> str:
         
         reply = await generate_with_network_failover (grounded_prompt)
         reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
-
+    
     return reply
 
 
@@ -162,7 +164,7 @@ async def chat(request: ChatRequest):
    
     print(f"Prompt length: {len(augmented_message)} characters")
     # Send prior conversation history + this turn's augmented question
-    # messages_to_send = history + [{"role": "user", "content": augmented_message}]
+    messages_to_send = history + [{"role": "user", "content": augmented_message}]
 
     # debugging purpose
     #print(json.dumps(messages_to_send, indent=2))  
@@ -172,14 +174,15 @@ async def chat(request: ChatRequest):
     #     messages=messages_to_send
     # )
     # reply = response.choices[0].message.content
-    # # Save the CLEAN question (not the augmented version) and the reply
-    # history.append({"role": "user", "content": request.message})
-    # history.append({"role": "assistant", "content": reply})
+    
     total_start = time.time()
     reply = await generate_with_knowledge_failover(request.message, augmented_message)
     total_elapsed = time.time() - total_start
     print(f"Total answer_with_coverage_check time: {total_elapsed:.2f} seconds")
-
+    # Save the CLEAN question (not the augmented version) and the reply
+    history.append({"role": "user", "content": request.message})
+    history.append({"role": "assistant", "content": reply})
+  
     return {"reply": reply}
 
 

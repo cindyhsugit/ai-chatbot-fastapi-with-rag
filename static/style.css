@@ -18,3 +18,9 @@ body {
   margin-bottom: 10px;
   padding: 10px;
 }
+.hint {
+  font-size: 0.85em;
+  color: #888;
+  font-style: italic;
+  margin-top: 8px;
+}
