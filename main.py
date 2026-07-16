@@ -193,10 +193,8 @@ def healthAPIEndpoint():
 
 # run main.py directly, start the server on your computer at port 8000
 if __name__ == "__main__":
-    
-    # runs the web server
     import uvicorn
-
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = int(os.environ.get("PORT", 8000))  # Cloud Run sets PORT=8080; falls back to 8000 for local runs
+    uvicorn.run(app, host="0.0.0.0", port=port)
     
     
