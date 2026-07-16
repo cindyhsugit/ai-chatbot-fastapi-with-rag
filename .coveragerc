@@ -1,0 +1,6 @@
+# .coveragerc
+[run]
+omit =
+    selenium_testing.py
+    track_gemini_speed.py
+    time_test_reranker_warmup.py
