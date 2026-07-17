@@ -66,10 +66,12 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 #store chat history, list of dictionaries
 history = []
+session_store: dict[str, list] = {}
 
 # data models
 class ChatRequest(BaseModel):
     message: str
+    session_id: str
 
 class ChatResponse(BaseModel):
     reply: str
@@ -110,7 +112,7 @@ async def generate_with_network_failover (prompt: str, messages_override: list =
         return reply
 
 
-async def generate_with_knowledge_failover(question: str, prompt: str) -> str:
+async def generate_with_knowledge_failover(question: str, prompt: str, history: list) -> str:
     """
     Runs the prompt through generate_with_failover, and if the model
     signals NO_KNOWLEDGE, falls back to web search + a grounded
@@ -149,6 +151,9 @@ Question: {question}
 @app.post("/chat")
 async def chat(request: ChatRequest):
 
+    session_id = request.session_id  # frontend generates/sends a UUID per browser tab
+    history = session_store.get(session_id, [])
+
     # grab the pages most related to what the user asked
     # relevant_chunks : list[str]
     start = time.time()
@@ -163,9 +168,7 @@ async def chat(request: ChatRequest):
     augmented_message = construct_prompt(CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context)
    
     print(f"Prompt length: {len(augmented_message)} characters")
-    # Send prior conversation history + this turn's augmented question
-    messages_to_send = history + [{"role": "user", "content": augmented_message}]
-
+    
     # debugging purpose
     #print(json.dumps(messages_to_send, indent=2))  
    
@@ -176,7 +179,7 @@ async def chat(request: ChatRequest):
     # reply = response.choices[0].message.content
     
     total_start = time.time()
-    reply = await generate_with_knowledge_failover(request.message, augmented_message)
+    reply = await generate_with_knowledge_failover(request.message, augmented_message, history)
     total_elapsed = time.time() - total_start
     print(f"Total answer_with_coverage_check time: {total_elapsed:.2f} seconds")
     # Save the CLEAN question (not the augmented version) and the reply

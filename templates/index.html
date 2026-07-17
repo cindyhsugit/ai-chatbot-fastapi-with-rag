@@ -35,6 +35,12 @@
     <p class="hint">💡 Try asking: "What is Homer Simpson's favorite food?"</p>
   </div>
   <script>
+    const sessionId = crypto.randomUUID();  
+    function scrollToBottom() {
+      const messagesDiv = document.getElementById("messages");
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
     async function sendMsg() {
       console.log("button clicked");
       const message = document.getElementById("msg").value;
@@ -46,27 +52,31 @@
       // show the user's message immediately
       messagesDiv.innerHTML += `<p><b>You:</b> ${message}</p>`;
       document.getElementById("msg").value = "";
+      scrollToBottom(); 
 
       // add spinner placeholder, keep a reference so we can remove just this one
       const spinnerId = "spinner-" + Date.now();
       messagesDiv.innerHTML += `<p id="${spinnerId}" class="spinner">Thinking...</p>`;
       sendBtn.disabled = true;
+      scrollToBottom(); 
 
       try {
         const res = await fetch("/chat", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ message })
+          body: JSON.stringify({ message , session_id: sessionId})
         });
         const data = await res.json();
 
         document.getElementById(spinnerId).outerHTML =
           `<p><b>Bot:</b> ${data.reply}</p>`;
-        console.log(data);
+          scrollToBottom(); 
+          console.log(data);
       } catch (err) {
         document.getElementById(spinnerId).outerHTML =
           `<p><b>Bot:</b> Something went wrong. Please try again.</p>`;
-        console.error(err);
+          scrollToBottom(); 
+          console.error(err);
       } finally {
         sendBtn.disabled = false;
       }

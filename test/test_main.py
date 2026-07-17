@@ -37,7 +37,7 @@ def test_generate_with_knowledge_failover_happy_path(mock_generate):
     mock_generate.return_value = "Homer Simpson's favorite food is broccoli casserole."
 
     result = asyncio.run(
-        generate_with_knowledge_failover("What is Homer's favorite food?", "promptstr")
+        generate_with_knowledge_failover("What is Homer's favorite food?", "promptstr", [])
     )
 
     assert isinstance(result, str)
@@ -57,7 +57,7 @@ def test_generate_with_knowledge_failover_error_path_no_web_results(
     mock_web_search.return_value = ""  # no web results found
 
     result = asyncio.run(
-        generate_with_knowledge_failover("some obscure question", "promptstr")
+        generate_with_knowledge_failover("some obscure question", "promptstr", [])
     )
 
     assert isinstance(result, str)
@@ -76,12 +76,25 @@ def test_generate_with_knowledge_failover_edge_case_whitespace_around_sentinel(
     mock_generate.side_effect = ["  NO_KNOWLEDGE  \n", "Grounded answer from the web."]
     mock_web_search.return_value = "some web search result text"
 
-    result = asyncio.run(generate_with_knowledge_failover("some question", "promptstr"))
+    result = asyncio.run(generate_with_knowledge_failover("some question", "promptstr", []))
 
     assert isinstance(result, str)
     assert "Grounded answer from the web." in result
 
+@patch("main.generate_with_network_failover", new_callable=AsyncMock)
+def test_generate_with_knowledge_failover_passes_history_through(mock_generate):
+    mock_generate.return_value = "some answer"
+    prior_history = [{"role": "user", "content": "earlier question"},
+                      {"role": "assistant", "content": "earlier answer"}]
 
+    asyncio.run(generate_with_knowledge_failover("new question", "promptstr", prior_history))
+
+    # confirm history was included in the messages sent to generate_with_network_failover
+    call_args = mock_generate.call_args
+    messages_sent = call_args[0][1]  # second positional arg: messages_override
+    assert prior_history[0] in messages_sent
+    assert prior_history[1] in messages_sent
+    
 def test_construct_prompt_happy_path():
     # happy path: normal rules, context, and question all get placed correctly
     result = construct_prompt(

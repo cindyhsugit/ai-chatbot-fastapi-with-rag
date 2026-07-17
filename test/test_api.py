@@ -12,7 +12,7 @@ def test_health_endpoint():
     
 # using TestClient    
 def test_chat_endpoint_happy_path():
-    response = client.post("/chat", json={"message": "hello"})
+    response = client.post("/chat", json={"message": "hello",  "session_id": "test-session-1"})
     assert response.status_code == 200
     data = response.json()
     assert "reply" in data
@@ -41,6 +41,6 @@ def test_chat_endpoint_both_providers_fail(mock_gemini, mock_openai):
     # deployed server would — converting an unhandled exception into an
     # actual 500 response instead of re-raising it into the test itself
     client_no_raise = TestClient(app, raise_server_exceptions=False)
-    response = client_no_raise.post("/chat", json={"message": "hello"})
+    response = client_no_raise.post("/chat", json={"message": "hello", "session_id": "test-session-1"})
 
     assert response.status_code == 500
