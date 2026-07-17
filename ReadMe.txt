@@ -91,3 +91,27 @@ Known deployment gotchas worth documenting (all resolved):
 - **Cloud Run + memory:** the ML stack (sentence-transformers, cross-encoder, FAISS, ChromaDB) needs real headroom — 512Mi caused a silent out-of-memory kill on container startup with no traceback in the logs. Bumped to 2Gi.
 - **Cloud Run + HTTPS scheme:** Cloud Run terminates TLS at its proxy, so the container only ever sees plain `http` internally. FastAPI's `url_for()` generated `http://` links for static assets, which browsers block as mixed content on an otherwise-`https://` page. Fixed by adding `--proxy-headers --forwarded-allow-ips='*'` to the uvicorn CMD, so it trusts Cloud Run's `X-Forwarded-Proto` header instead of guessing.
 - **Windows PowerShell + git branch typos:** watch for truncated branch names in push commands (`feature/chromadb` vs `feature/chromadb-migration`).
+
+
+## Known limitations / planned improvements
+
+- **Context suppresses trained-knowledge fallback.** Even when retrieval returns
+  low-relevance chunks, injecting *any* context into the prompt causes the model
+  to default to `NO_KNOWLEDGE` and fall back to web search — even for questions
+  it could answer confidently from pretraining (e.g. "capital of France").
+  Confirmed via controlled test: same question with empty context answers
+  correctly from trained knowledge; with irrelevant context injected, it
+  defers to web search.
+  **Planned fix:** the reranker (`ms-marco-MiniLM-L-6-v2`) already computes a
+  relevance score per chunk, but the current pipeline discards it and always
+  passes the top-k chunks through. Returning the score and filtering on a
+  threshold would let genuinely out-of-scope questions skip context injection
+  entirely.
+
+- **No response caching.** Identical questions currently re-run the full
+  retrieval → rerank → LLM pipeline every time. Adding an in-memory cache
+  (keyed on normalized question text) would avoid redundant calls — with the
+  caveat that time-sensitive, web-sourced answers should be excluded from
+  caching or given a short TTL.
+
+
