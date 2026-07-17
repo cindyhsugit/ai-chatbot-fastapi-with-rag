@@ -84,6 +84,8 @@ pytest test/ --cov=. --cov-report=term-missing --cov-config=.coveragerc
 
 ## Deployment
 Deployed via Docker to both **Render** and **Google Cloud Run**.
+https://ai-chatbot-fastapi-3b8w.onrender.com
+https://ai-chatbot-with-rag-1016078012439.us-west1.run.app/
 
 Known deployment gotchas worth documenting (all resolved):
 - **Cloud Run + memory:** the ML stack (sentence-transformers, cross-encoder, FAISS, ChromaDB) needs real headroom — 512Mi caused a silent out-of-memory kill on container startup with no traceback in the logs. Bumped to 2Gi.
