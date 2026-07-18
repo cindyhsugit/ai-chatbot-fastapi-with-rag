@@ -1,5 +1,4 @@
 
-![RAG work flow in production](rag_workflow_annotated.png)
 
 ## Branches
 - `main` — current branch. Corrective RAG (CRAG) pipeline:
