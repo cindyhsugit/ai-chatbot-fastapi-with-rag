@@ -1,9 +1,9 @@
 
 ![RAG work flow in production](rag_workflow_annotated.png)
 
-![High level structure](diagram_hierarchy.md)
+See the [high level architecture](diagram_hierarchy.md) for more.
+See the [detail structure](diagram_detail.md) for more.
 
-![detail structure](diagram_detail.md)
 
 ## Branches
 - `main` — current branch. Corrective RAG (CRAG) pipeline:
