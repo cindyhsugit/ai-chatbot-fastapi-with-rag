@@ -1,3 +1,6 @@
+
+![RAG work flow in production](rag_workflow_annotated.png)
+
 ## Branches
 - `main` — current branch. Corrective RAG (CRAG) pipeline:
   - HuggingFace open-source embeddings (`all-MiniLM-L6-v2`), no paid embedding API dependency.
