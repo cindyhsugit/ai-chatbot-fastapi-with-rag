@@ -37,6 +37,8 @@ from web_search_provider import web_search_fallback
 
 from prompt_rules import CONTEXT_ONLY_RULE, CONTEXT_TRAINED_DATA_ONLY_RULE
 
+from graph_builder import build_graph
+
 # setup
 load_dotenv("apiKey.env")
 load_dotenv(".env")
@@ -54,6 +56,8 @@ logger.setLevel(logging.INFO)
 
 # creates the actual web app
 app = FastAPI()
+
+graph = build_graph()
 
 # This finds the folder where main.py lives
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,7 +90,7 @@ def home(request: Request):
                                       context = {})
 
 @app.get("/langgraph", response_class=HTMLResponse)
-async def read_langgraph(request: Request):
+async def langgraph(request: Request):
     return templates.TemplateResponse(request=request, 
                                       name="index_langgraph.html",
                                       context = {})
@@ -201,9 +205,10 @@ def healthAPIEndpoint():
 
 
 
-
 @app.post("/langgraphchat")
 async def langgraphchat(request: ChatRequest):
+    #result = await graph.ainvoke({"question": request.message, 
+    #                              "session_id": request.session_id, ...})
     return {"reply": ""}
 
 # run main.py directly, start the server on your computer at port 8000
