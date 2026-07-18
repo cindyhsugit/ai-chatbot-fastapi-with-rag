@@ -1,6 +1,7 @@
 
 ![RAG work flow in production](rag_workflow_annotated.png)
 
+See the [architecture details](diagram_hierachy.md) for more.
 ![High level structure](diagram_hierachy.md)
 
 ![detail structure](diagram_detail.md)
