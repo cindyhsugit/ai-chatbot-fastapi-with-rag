@@ -85,6 +85,11 @@ def home(request: Request):
                                       name = "index.html", 
                                       context = {})
 
+@app.get("/langgraph", response_class=HTMLResponse)
+async def read_langgraph(request: Request):
+    return templates.TemplateResponse(request=request, 
+                                      name="index_langgraph.html",
+                                      context = {})
 
 import rag_tasks
 
@@ -193,6 +198,13 @@ async def chat(request: ChatRequest):
 @app.get("/health")
 def healthAPIEndpoint():
     return {"status": "ok"}
+
+
+
+
+@app.post("/langgraphchat")
+async def langgraphchat(request: ChatRequest):
+    return {"reply": ""}
 
 # run main.py directly, start the server on your computer at port 8000
 if __name__ == "__main__":
