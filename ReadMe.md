@@ -1,6 +1,10 @@
 
 ![RAG work flow in production](rag_workflow_annotated.png)
 
+![High level structure](diagram_hierachy.md)
+
+![detail structure](diagram_detail.md)
+
 ## Branches
 - `main` — current branch. Corrective RAG (CRAG) pipeline:
   - HuggingFace open-source embeddings (`all-MiniLM-L6-v2`), no paid embedding API dependency.
@@ -78,6 +82,7 @@ Retrieval (embedding → FAISS search → rerank) totals ~1.05s; generation domi
 *(Timing breakdown for the current ChromaDB + CRAG path not yet re-benchmarked — swap the FAISS row for ChromaDB search, and add a row for the Tavily fallback path when the NO_KNOWLEDGE branch fires.)*
 
 ## Testing
+![test coverage](main_coverage.png)
 Full pytest suite under `test/` — **39 tests, 99% statement coverage**, one file per module:
 - `test_chunking.py`, `test_retrieval.py`, `test_reranker.py`, `test_embedding.py`, `test_chromadb.py` — core RAG pipeline pieces
 - `test_main.py` — `construct_prompt`, `generate_with_network_failover`, `generate_with_knowledge_failover`
