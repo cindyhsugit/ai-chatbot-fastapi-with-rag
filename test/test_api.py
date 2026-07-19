@@ -44,3 +44,10 @@ def test_chat_endpoint_both_providers_fail(mock_gemini, mock_openai):
     response = client_no_raise.post("/chat", json={"message": "hello", "session_id": "test-session-1"})
 
     assert response.status_code == 500
+
+import requests
+
+def test_langgraphchat_endpoint_happy_path():
+    response = client.post("/langgraphchat", json={"question": "what is the refund policy?"})
+    assert response.status_code == 200
+    assert "answer" in response.json()

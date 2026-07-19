@@ -1,7 +1,8 @@
 import rag_tasks
 from reranker_hf import rerank  
 
-from typing import TypedDict, Optional
+from typing import TypedDict, Annotated, List, Tuple
+import operator
 
 from langgraph.graph import StateGraph, END
 
@@ -30,11 +31,10 @@ def retrieve_and_rerank_node(state: ChatState) -> dict:
     question = state["question"]
 
     # existing retrieval call, untouched
-    candidates = rag_tasks.retrieve(question)
-
+    
     # existing rerank call — assumes you've already applied the fix
     # to return (text, score) tuples instead of text-only
-    reranked = rerank(question, candidates, top_k=3)
+    reranked = rag_tasks.retrieve(question)
 
     # top score drives the threshold decision in the next node
     top_score = reranked[0][1] if reranked else 0.0
