@@ -14,7 +14,8 @@ def test_rerank_happy_path():
 
     assert isinstance(result, list)
     assert len(result) > 0
-    assert "broccoli casserole" in result[0]
+    top_text, top_score = result[0]
+    assert "broccoli casserole" in top_text
 
 
 def test_rerank_error_path_empty_candidates():

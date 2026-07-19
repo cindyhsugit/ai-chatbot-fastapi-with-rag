@@ -5,7 +5,9 @@ model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 # Takes the user query and a list of candidate chunk texts (from FAISS retrieval),
 # returns the top_k chunks reordered by relevance.
-def rerank(query: str, candidates: list[str], top_k: int = 5) -> list[str]:
+def rerank(query: str, 
+           candidates: list[str], 
+           top_k: int = 5) -> list[tuple[str, float]]:
     
     # query -> "what's homer's favorite food" (str)
     # candidates -> ["chunk 1 text...", "chunk 2 text...", ...] (list[str])
@@ -27,8 +29,8 @@ def rerank(query: str, candidates: list[str], top_k: int = 5) -> list[str]:
     #   ("chunk C", 0.80)
     # ]
 
-    result = []
-    for text, score in scored[:top_k]:
-        result.append(text)
+    # result = []
+    # for text, score in scored[:top_k]:
+    #     result.append(text)
     # result would look like ["chunk A", "chunk B"]
-    return result
+    return scored[:top_k] 

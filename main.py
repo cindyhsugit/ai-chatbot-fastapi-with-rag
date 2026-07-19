@@ -29,9 +29,15 @@ from pathlib import Path
 
 import logging
 from logging_config import setup_logging
+
+# setup
+load_dotenv("apiKey.env")
+load_dotenv(".env")
+
 import gemini_provider
 
 import time
+
 
 from web_search_provider import web_search_fallback
 
@@ -39,9 +45,7 @@ from prompt_rules import CONTEXT_ONLY_RULE, CONTEXT_TRAINED_DATA_ONLY_RULE
 
 from graph_builder import build_graph
 
-# setup
-load_dotenv("apiKey.env")
-load_dotenv(".env")
+
 
 # OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -172,7 +176,7 @@ async def chat(request: ChatRequest):
    
     # staples them all into one single block of text, 
     # with a blank line between each card (\n\n means "new line, new line)
-    context = "\n\n".join(relevant_chunks)
+    context = "\n\n".join(text for text, score in relevant_chunks) if relevant_chunks else ""
 
     augmented_message = construct_prompt(CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context)
    
