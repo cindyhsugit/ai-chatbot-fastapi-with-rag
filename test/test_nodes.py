@@ -3,6 +3,7 @@ from unittest.mock import patch
 from graph_builder import retrieve_and_rerank_node
 import rag_tasks
 import reranker_hf
+from graph_builder import score_threshold_router
 
 def test_retrieve_and_rerank_node_happy_path():
     state = {"question": "What is Homer Simpson's favorite food?"}
@@ -28,3 +29,15 @@ def test_retrieve_and_rerank_node_rerank_failure():
     with patch("graph_builder.rag_tasks.retrieve", side_effect=RuntimeError("model timeout")):
         with pytest.raises(RuntimeError):
             retrieve_and_rerank_node(state)
+
+def test_score_threshold_router_above_threshold():
+    state = {"score": 0.5}
+    assert score_threshold_router(state) == "generate_with_context"
+
+def test_score_threshold_router_below_threshold():
+    state = {"score": -3.0}
+    assert score_threshold_router(state) == "generate_without_context"
+
+def test_score_threshold_router_at_boundary():
+    state = {"score": 0.0}
+    assert score_threshold_router(state) == "generate_without_context"

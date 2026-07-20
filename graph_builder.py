@@ -44,12 +44,35 @@ def retrieve_and_rerank_node(state: ChatState) -> dict:
         "score": top_score,
     }
 
+def score_threshold_router(state: ChatState) -> str:
+    if state["score"] > 0:
+        return "generate_with_context"
+    else:
+        return "generate_without_context"
+
+   
+def generate_with_context_node(state: ChatState) -> dict:
+    pass
+   
+def generate_without_context_node(state: ChatState) -> dict:
+    pass
 
 def build_graph():
     graph = StateGraph(ChatState)
 
     graph.add_node("retrieve_and_rerank", retrieve_and_rerank_node)
+    graph.add_node("generate_with_context", generate_with_context_node)
+    graph.add_node("generate_without_context", generate_without_context_node)
+
     graph.set_entry_point("retrieve_and_rerank")
+    graph.add_conditional_edges(
+        "retrieve_and_rerank",
+        score_threshold_router,
+        {
+            "generate_with_context": "generate_with_context",
+            "generate_without_context": "generate_without_context",
+        },
+        )
     graph.add_edge("retrieve_and_rerank", END)
 
     return graph.compile()
