@@ -1,6 +1,4 @@
 """
-prompt_rules.py
-
 Rule text used by construct_prompt() to control how strictly the model
 must stick to provided context. Kept separate from main.py so the
 orchestration logic isn't buried under large prompt strings.

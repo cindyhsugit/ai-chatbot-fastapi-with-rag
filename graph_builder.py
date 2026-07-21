@@ -3,8 +3,14 @@ from reranker_hf import rerank
 
 from typing import TypedDict, Annotated, List, Tuple
 import operator
-
+import prompt_rules 
 from langgraph.graph import StateGraph, END
+
+
+from openai import OpenAI
+from openai import AsyncOpenAI
+# reads environment variables
+import os
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -51,8 +57,24 @@ def score_threshold_router(state: ChatState) -> str:
         return "generate_without_context"
 
    
-def generate_with_context_node(state: ChatState) -> dict:
-    pass
+
+async def generate_with_context_node(state: ChatState) -> dict:
+    question = state["question"]
+    chunks = state["retrieved_chunks"]  # list of (text, score) tuples
+    history = state["history"] 
+    context_text = "\n\n".join(chunk_text for chunk_text, _ in chunks)
+    from main import construct_prompt
+    prompt = construct_prompt(rules=prompt_rules.CONTEXT_ONLY_RULE, 
+                                   context=context_text, 
+                                   question=question)
+
+
+    messages = history + [{"role": "user", "content": prompt}]
+    from main import generate_with_network_failover
+    reply = await generate_with_network_failover(prompt=prompt, 
+                                                 messages_override=messages)
+
+    return {"reply": reply}
    
 def generate_without_context_node(state: ChatState) -> dict:
     pass

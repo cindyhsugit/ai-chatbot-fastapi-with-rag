@@ -1,4 +1,5 @@
-from unittest.mock import patch
+import pytest
+from unittest.mock import patch, MagicMock
 from langgraph.graph import StateGraph
 
 from graph_builder import ChatState, retrieve_and_rerank_node
@@ -35,3 +36,24 @@ def test_graph_routes_low_score_to_web_search():
         result = compiled.invoke({"question": "some question"})
 
     # assert the graph actually reached generate_without_context's behavior    
+
+@pytest.mark.asyncio
+async def test_generate_with_context_node_wired_into_graph():
+    graph = StateGraph(ChatState)
+    graph.add_node("generate_with_context", generate_with_context_node)
+    graph.set_entry_point("generate_with_context")
+    graph.set_finish_point("generate_with_context")
+    compiled = graph.compile()
+    initial_state = {    
+        "question": "What is Homer Simpson's favorite food?",
+        "retrieved_chunks": [("Homer loves donuts.", 0.9)],
+        "history": [],
+    }
+
+    with patch(
+        "main.generate_with_network_failover",
+        return_value="Homer's favorite food is donuts.",
+    ):
+        result = await compiled.ainvoke(initial_state)
+
+    assert result["reply"] == "Homer's favorite food is donuts."
