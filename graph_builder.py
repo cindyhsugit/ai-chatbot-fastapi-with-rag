@@ -76,8 +76,24 @@ async def generate_with_context_node(state: ChatState) -> dict:
 
     return {"reply": reply}
    
-def generate_without_context_node(state: ChatState) -> dict:
-    pass
+async def generate_without_context_node(state: ChatState) -> dict:
+    question = state["question"]
+
+    history = state["history"] 
+    from main import construct_prompt
+    prompt = construct_prompt(rules=prompt_rules.NO_CONTEXT_RULE, 
+                              context="",
+                              question=question)
+
+
+    messages = history + [{"role": "user", "content": prompt}]
+    from main import generate_with_knowledge_failover
+
+    reply = await generate_with_knowledge_failover(question=question,
+                                                   prompt=prompt,
+                                                   history=messages)
+
+    return {"reply": reply}
 
 def build_graph():
     graph = StateGraph(ChatState)

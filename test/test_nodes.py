@@ -59,3 +59,38 @@ async def test_generate_with_context_node_happy_path():
 
     assert result == {"reply": "Homer's favorite food is donuts."}
     mock_failover.assert_called_once()  
+
+@pytest.mark.asyncio
+async def test_generate_without_context_node_happy_path():
+    state = {
+        "question": "Who are Homer's family?",
+        "retrieved_chunks": [],
+        "history": [],
+    }
+
+    with patch(
+        "main.generate_with_knowledge_failover",
+        return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
+    ) as mock_failover:
+        result = await graph_builder.generate_without_context_node(state)
+
+    assert result == {"reply": "Homer's family includes Marge, Bart, Lisa, and Maggie."}
+    mock_failover.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_without_context_node_no_knowledge():
+    state = {
+        "question": "What is Homer's cholesterol level in the Season 12 finale?",
+        "retrieved_chunks": [],
+        "history": [],
+    }
+
+    with patch(
+        "main.generate_with_knowledge_failover",
+        return_value="NO_KNOWLEDGE",
+    ):
+        result = await graph_builder.generate_without_context_node(state)
+
+    assert result == {"reply": "NO_KNOWLEDGE"}
+  

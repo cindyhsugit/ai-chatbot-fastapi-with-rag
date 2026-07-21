@@ -19,3 +19,9 @@ trained knowledge instead — but only if you are confident and not guessing.
 If neither the context nor your own reliable knowledge can answer this
 question, respond with exactly: NO_KNOWLEDGE
 """
+
+NO_CONTEXT_RULE = """
+Answer this question using only your own trained knowledge.
+If you are not confident, or don't actually know the answer,
+respond with exactly: NO_KNOWLEDGE
+"""
