@@ -48,6 +48,24 @@ def test_chat_endpoint_both_providers_fail(mock_gemini, mock_openai):
 import requests
 
 def test_langgraphchat_endpoint_happy_path():
-    response = client.post("/langgraphchat", json={"question": "what is the refund policy?"})
+    response = client.post(
+        "/langgraphchat",
+        json={"message": "what is the refund policy?", "session_id": "test-session-1"},
+    )
     assert response.status_code == 200
-    assert "answer" in response.json()
+    assert "reply" in response.json()
+
+def test_langgraphchat_endpoint_missing_message_field():
+    response = client.post(
+        "/langgraphchat",
+        json={"session_id": "test-session-1"},  # missing required "message" field
+    )
+    assert response.status_code == 422  # FastAPI/Pydantic validation error
+
+def test_langgraphchat_endpoint_empty_message_returns_400():
+    response = client.post(
+        "/langgraphchat",
+        json={"message": "   ", "session_id": "test-session-1"},  # whitespace-only
+    )
+    assert response.status_code == 400
+    assert "non-empty string" in response.json()["detail"]

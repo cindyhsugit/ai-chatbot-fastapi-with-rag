@@ -1,5 +1,8 @@
 import logging
 from logging_config import setup_logging
+import pytest
+import rag_tasks
+
 
 
 def test_setup_logging_happy_path():
@@ -26,10 +29,6 @@ def test_setup_logging_edge_case_clears_existing_handlers():
     second_count = len(logger.handlers)
 
     assert first_count == second_count  # not accumulating duplicate handlers
-
-import pytest
-import rag_tasks
-
 
 def test_reads_file_content(tmp_path, monkeypatch):
     file_path = tmp_path / "input.txt"

@@ -8,10 +8,10 @@ from openai import OpenAI
 from openai import AsyncOpenAI
 import faiss
 import numpy as np
-import embeddings_hf as Embeddings_HF
-import reranker_hf as Reranker_HF
+import embeddings_hf
+import reranker_hf
 import time
-import vectorstore_chroma as VectorStore_Chroma
+import vectorstore_chroma
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -50,7 +50,7 @@ def get_embedding(text):
     if not isinstance(text, str) or not text.strip():
         raise ValueError("text must be a non-empty string")
     
-    return_list = Embeddings_HF.embed_texts([text])[0].tolist()
+    return_list = embeddings_hf.embed_texts([text])[0].tolist()
     
     return return_list
 
@@ -59,7 +59,7 @@ def get_embedding(text):
 # async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # async def get_embedding_async(text):
 #    # was: response = await async_client.embeddings.create(model="text-embedding-3-small", input=text)
-#     return_list = Embeddings_HF.embed_texts([text])[0]
+#     return_list = embeddings_hf.embed_texts([text])[0]
 #     return return_list
 
 
@@ -84,7 +84,7 @@ def retrieve(question, k=20):
     # distances, indices = index.search(
     #    np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
-    retrieved_chunks = VectorStore_Chroma.search(
+    retrieved_chunks = vectorstore_chroma.search(
         query_embedding=question_embedding, k=20
     )
 
@@ -112,7 +112,7 @@ def retrieve(question, k=20):
     # top_k=3 -> how many we want back after reranking
     # reranked_chunks -> ["chunk about broccoli...", "chunk about donuts...", "chunk about..."] (list[str], 3 items, reordered by relevance)
     start = time.time()
-    reranked_chunks = Reranker_HF.rerank(
+    reranked_chunks = reranker_hf.rerank(
         question, retrieved_chunks, top_k=3
     )  # back down to 3 for generation
     end = time.time()
@@ -221,12 +221,12 @@ else:
 
     # list comprehension way
     # chunk_ids = [str(i) for i in range(len(chunks))]
-    VectorStore_Chroma.add_documents(
+    vectorstore_chroma.add_documents(
         ids=chunk_ids,
         embeddings=embeddings,  # this is your HuggingFace embeddings list
         documents=chunks,  # this is your list of chunk text strings
     )
-    print("Using ChromaDB:",  VectorStore_Chroma.__name__)
+    print("Using ChromaDB:",  vectorstore_chroma.__name__)
     
     #print("FAISS:", index.ntotal)
-    print("ChromaDB Collection Count:", VectorStore_Chroma.collection.count())
+    print("ChromaDB Collection Count:", vectorstore_chroma.collection.count())

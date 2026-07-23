@@ -1,7 +1,7 @@
 from unittest.mock import patch, MagicMock
 import asyncio
 import pytest
-from web_search_provider import web_search_fallback
+import web_search_provider
 from unittest.mock import AsyncMock
 from graph_builder import web_search_node
 import prompt_rules
@@ -15,7 +15,7 @@ def test_web_search_fallback_happy_path(mock_tavily):
         ]
     }
 
-    result = asyncio.run(web_search_fallback("Homer Simpson favorite food"))
+    result = asyncio.run(web_search_provider.web_search_fallback("Homer Simpson favorite food"))
 
     assert isinstance(result, str)
     assert "Broccoli casserole is a running joke." in result
@@ -28,7 +28,7 @@ def test_web_search_fallback_error_path_tavily_throws(mock_tavily):
     # rate limit) — fails soft, returns "" instead of crashing the pipeline
     mock_tavily.search.side_effect = Exception("Tavily API down")
 
-    result = asyncio.run(web_search_fallback("any question"))
+    result = asyncio.run(web_search_provider.web_search_fallback("any question"))
 
     assert result == ""
 
@@ -45,7 +45,7 @@ def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
         ]
     }
 
-    result = asyncio.run(web_search_fallback("any question"))
+    result = asyncio.run(web_search_provider.web_search_fallback("any question"))
 
     assert "Real Result" in result
     assert "Actual useful content." in result
@@ -55,7 +55,7 @@ def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
 async def test_web_search_node_uses_web_search_rule():
     state = {"question": "what is trump's necktie color today", "history": []}
 
-    with patch("graph_builder.web_search_provider.web_search_fallback", new=AsyncMock(return_value="some search result text")), \
+    with patch("web_search_provider.web_search_fallback", new=AsyncMock(return_value="some search result text")), \
          patch("main.construct_prompt") as mock_construct_prompt, \
          patch("main.generate_with_llm_failover", new=AsyncMock(return_value="a synthesized answer")):
 
@@ -67,10 +67,12 @@ async def test_web_search_node_uses_web_search_rule():
         called_rule = mock_construct_prompt.call_args.args[0] if mock_construct_prompt.call_args.args else mock_construct_prompt.call_args.kwargs["rules"]
         assert called_rule == prompt_rules.WEB_SEARCH_RULE
 
-        assert result["reply"] == "a synthesized answer"
+        expected_reply = "a synthesized answer\n\n(Note: answer sourced from live web search, not local knowledge base.)"
+        
+        assert result["reply"] == expected_reply
         assert result["history"] == [
             {"role": "user", "content": state["question"]},
-            {"role": "assistant", "content": "a synthesized answer"},
+            {"role": "assistant", "content": expected_reply},
         ]
 
 
@@ -78,7 +80,7 @@ async def test_web_search_node_uses_web_search_rule():
 async def test_web_search_node_no_results_returns_fallback_message():
     state = {"question": "some obscure question", "history": []}
 
-    with patch("graph_builder.web_search_provider.web_search_fallback", new=AsyncMock(return_value=None)):
+    with patch("web_search_provider.web_search_fallback", new=AsyncMock(return_value=None)):
         result = await web_search_node(state)
 
         assert result["reply"] == (
