@@ -18,7 +18,7 @@ question = "what's homer's favorite food?"
 # Pull real top-20 chunks once, reuse for both timed calls
 question_embedding = get_embedding(question) # however you currently generate this embedding
 retrieved_chunks = VectorStore_Chroma.search(
-    query_embedding=question_embedding.tolist(), k=20
+    query_embedding=question_embedding, k=20
 )
 
 print(f"Chunks retrieved: {len(retrieved_chunks)}")

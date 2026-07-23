@@ -5,6 +5,10 @@ import reranker_hf
 import graph_builder 
 import main
 
+from langchain_core.messages import HumanMessage, AIMessage
+
+
+
 def test_retrieve_and_rerank_node_happy_path():
     state = {"question": "What is Homer Simpson's favorite food?"}
     result = graph_builder.retrieve_and_rerank_node(state)
@@ -93,4 +97,80 @@ async def test_generate_without_context_node_no_knowledge():
         result = await graph_builder.generate_without_context_node(state)
 
     assert result == {"reply": "NO_KNOWLEDGE"}
-  
+
+
+@pytest.mark.asyncio
+async def test_web_search_node_happy_path():
+    state = {
+        "question": "What is the weather like today?",
+        "history": [],
+    }
+
+    with patch(
+        "web_search_provider.web_search_fallback",
+        return_value="Today's weather is sunny with a high of 75F.",
+    ), patch(
+        "main.generate_with_network_failover",
+        return_value="It's sunny with a high of 75F today.",
+    ):
+        result = await graph_builder.web_search_node(state)
+
+    assert result == {"reply": "It's sunny with a high of 75F today."}
+
+
+@pytest.mark.asyncio
+async def test_web_search_node_no_results():
+    state = {
+        "question": "asdkfjhalskdjfh gibberish query",
+        "history": [],
+    }
+
+    with patch(
+        "web_search_provider.web_search_fallback",
+        return_value=None,
+    ):
+        result = await graph_builder.web_search_node(state)
+
+    assert result == {
+        "reply": "I don't know - no local context, no trained knowledge, and web search returned nothing."
+    }
+
+
+
+def test_converts_message_objects():
+    history = [
+        HumanMessage(content="hi"),
+        AIMessage(content="hello there"),
+    ]
+    result = graph_builder.convert_to_openai_messages(history)
+    assert result == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello there"},
+    ]
+
+
+def test_converts_plain_dicts():
+    history = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello there"},
+    ]
+    result = graph_builder.convert_to_openai_messages(history)
+    assert result == history
+
+
+def test_converts_mixed_list():
+    history = [
+        HumanMessage(content="hi"),
+        AIMessage(content="hello there"),
+        {"role": "user", "content": "what's the weather"},
+    ]
+    result = graph_builder.convert_to_openai_messages(history)
+    assert result == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello there"},
+        {"role": "user", "content": "what's the weather"},
+    ]
+
+
+def test_empty_history():
+    assert graph_builder.convert_to_openai_messages([]) == []

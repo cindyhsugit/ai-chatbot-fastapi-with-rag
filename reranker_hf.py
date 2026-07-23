@@ -20,7 +20,7 @@ def rerank(query: str,
     scores = model.predict(pairs)
 
     # Sort candidates by score, descending
-    scored = list(zip(candidates, scores))
+    scored = list(zip(candidates,  [float(s) for s in scores]))
     scored.sort(key=lambda x: x[1], reverse=True)
     # scored looks like
     #[

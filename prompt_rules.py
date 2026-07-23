@@ -25,3 +25,9 @@ Answer this question using only your own trained knowledge.
 If you are not confident, or don't actually know the answer,
 respond with exactly: NO_KNOWLEDGE
 """
+
+WEB_SEARCH_RULE = """
+Answer the question using the web search results below.
+Synthesize an answer even if the results don't phrase things exactly like the question.
+Only say you don't know if the results are genuinely irrelevant to the question.
+"""

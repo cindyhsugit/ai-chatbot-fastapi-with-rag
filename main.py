@@ -43,15 +43,15 @@ from web_search_provider import web_search_fallback
 
 from prompt_rules import CONTEXT_ONLY_RULE, CONTEXT_TRAINED_DATA_ONLY_RULE
 
-from graph_builder import build_graph
+import graph_builder
 
-
+from langgraph.checkpoint.memory import MemorySaver
 
 # OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # OpenAI async client
 async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
- 
+
 
 # set up logs
 setup_logging()
@@ -61,47 +61,54 @@ logger.setLevel(logging.INFO)
 # creates the actual web app
 app = FastAPI()
 
-graph = build_graph()
+checkpointer = MemorySaver()
+graph = graph_builder.build_graph(checkpointer=checkpointer)
 
 # This finds the folder where main.py lives
 BASE_DIR = Path(__file__).resolve().parent
 
 # When the browser asks for /static/..., serve files from the static folder
-app.mount("/static", StaticFiles(directory="static"), name = "static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 #  tells FastAPI where your HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
-#store chat history, list of dictionaries
+# store chat history, list of dictionaries
 history = []
 session_store: dict[str, list] = {}
+
 
 # data models
 class ChatRequest(BaseModel):
     message: str
     session_id: str
 
+
 class ChatResponse(BaseModel):
     reply: str
 
+
 # home page route
-@app.get("/" , response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 # when visits /, run this function and return HTML. The request is needed for template rendering
 def home(request: Request):
     #  loads index.html and sends it to the browser
-    return templates.TemplateResponse(request = request, 
-                                      name = "index.html", 
-                                      context = {})
+    return templates.TemplateResponse(request=request, name="index.html", context={})
+
 
 @app.get("/langgraph", response_class=HTMLResponse)
 async def langgraph(request: Request):
-    return templates.TemplateResponse(request=request, 
-                                      name="index_langgraph.html",
-                                      context = {})
+    return templates.TemplateResponse(
+        request=request, name="index_langgraph.html", context={}
+    )
+
 
 import rag_tasks
 
-async def generate_with_network_failover (prompt: str, messages_override: list = None) -> str:
+
+async def generate_with_network_failover(
+    prompt: str, messages_override: list = None
+) -> str:
     """
     Tries OpenAI first, falls back to Gemini on failure.
     Returns the reply string. Used for both the initial answer attempt
@@ -111,21 +118,29 @@ async def generate_with_network_failover (prompt: str, messages_override: list =
         start = time.time()
         response = await async_client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=messages_override or [{"role": "user", "content": prompt}]
+            messages=messages_override or [{"role": "user", "content": prompt}],
         )
+
         elapsed = time.time() - start
         print(f"OpenAI response time: {elapsed:.2f} seconds")
         return response.choices[0].message.content
+
     except Exception as e:
         print(f"OpenAI failed: {e}, falling back to Gemini")
         start = time.time()
-        reply = await gemini_provider.generate_answer_gemini(prompt)
+
+        reply = await gemini_provider.generate_answer_gemini(
+            prompt, history=messages_override
+        )
+
         elapsed = time.time() - start
         print(f"Gemini response time: {elapsed:.2f} seconds")
-        return reply
+    return reply
 
 
-async def generate_with_knowledge_failover(question: str, prompt: str, history: list) -> str:
+async def generate_with_knowledge_failover(
+    question: str, prompt: str, history: list
+) -> str:
     """
     Runs the prompt through generate_with_failover, and if the model
     signals NO_KNOWLEDGE, falls back to web search + a grounded
@@ -133,8 +148,8 @@ async def generate_with_knowledge_failover(question: str, prompt: str, history: 
     to that call too).
     """
     messages_to_send = history + [{"role": "user", "content": prompt}]
-    
-    reply = await generate_with_network_failover (prompt, messages_to_send)
+
+    reply = await generate_with_network_failover(prompt, messages_to_send)
     if reply.strip() == "NO_KNOWLEDGE":
         web_results = await web_search_fallback(question)
 
@@ -142,10 +157,10 @@ async def generate_with_knowledge_failover(question: str, prompt: str, history: 
             return "I don't know - no local context, no trained knowledge, and web search returned nothing."
 
         grounded_prompt = construct_prompt(CONTEXT_ONLY_RULE, question, web_results)
-        
-        reply = await generate_with_network_failover (grounded_prompt)
+
+        reply = await generate_with_network_failover(grounded_prompt)
         reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
-    
+
     return reply
 
 
@@ -173,32 +188,38 @@ async def chat(request: ChatRequest):
     relevant_chunks = rag_tasks.retrieve(request.message)
     end = time.time()
     print(f"Retrieval Process Till Augmentation Time taken: {end - start:.2f} seconds")
-   
-    # staples them all into one single block of text, 
-    # with a blank line between each card (\n\n means "new line, new line)
-    context = "\n\n".join(text for text, score in relevant_chunks) if relevant_chunks else ""
 
-    augmented_message = construct_prompt(CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context)
-   
+    # staples them all into one single block of text,
+    # with a blank line between each card (\n\n means "new line, new line)
+    context = (
+        "\n\n".join(text for text, score in relevant_chunks) if relevant_chunks else ""
+    )
+
+    augmented_message = construct_prompt(
+        CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context
+    )
+
     print(f"Prompt length: {len(augmented_message)} characters")
-    
+
     # debugging purpose
-    #print(json.dumps(messages_to_send, indent=2))  
-   
+    # print(json.dumps(messages_to_send, indent=2))
+
     # response = await async_client.chat.completions.create(
     #     model="gpt-4o-mini",
     #     messages=messages_to_send
     # )
     # reply = response.choices[0].message.content
-    
+
     total_start = time.time()
-    reply = await generate_with_knowledge_failover(request.message, augmented_message, history)
+    reply = await generate_with_knowledge_failover(
+        request.message, augmented_message, history
+    )
     total_elapsed = time.time() - total_start
     print(f"Total answer_with_coverage_check time: {total_elapsed:.2f} seconds")
     # Save the CLEAN question (not the augmented version) and the reply
     history.append({"role": "user", "content": request.message})
     history.append({"role": "assistant", "content": reply})
-  
+
     return {"reply": reply}
 
 
@@ -208,17 +229,43 @@ def healthAPIEndpoint():
     return {"status": "ok"}
 
 
-
 @app.post("/langgraphchat")
 async def langgraphchat(request: ChatRequest):
-    #result = await graph.ainvoke({"question": request.message, 
-    #                              "session_id": request.session_id, ...})
-    return {"reply": ""}
+    # session_id = request.session_id
+    # history = session_store.get(session_id, [])
+
+    session_id = ""
+    history = []
+
+    initial_state = {
+        "question": request.message,
+        "history": history,
+        "session_id": session_id,
+        "retrieved_chunks": [],
+        "score": 0.0,
+        "reply": "",
+        "retry_count": 0,
+    }
+
+    start = time.time()
+    result = await graph.ainvoke(
+        initial_state, config={"configurable": {"thread_id": session_id}}
+    )
+    elapsed = time.time() - start
+    print(f"LangGraph total time: {elapsed:.2f}s")
+    # update session history with this turn, same as your /chat endpoint likely does
+    # history.append({"role": "user", "content": request.message})
+    # history.append({"role": "assistant", "content": result["reply"]})
+    # session_store[session_id] = history
+
+    return {"reply": result["reply"]}
+
 
 # run main.py directly, start the server on your computer at port 8000
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Cloud Run sets PORT=8080; falls back to 8000 for local runs
+
+    port = int(
+        os.environ.get("PORT", 8000)
+    )  # Cloud Run sets PORT=8080; falls back to 8000 for local runs
     uvicorn.run(app, host="0.0.0.0", port=port)
-    
-    

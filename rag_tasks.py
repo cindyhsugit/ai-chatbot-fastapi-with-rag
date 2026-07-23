@@ -43,7 +43,9 @@ def get_embedding(text):
     # )
     # return_list = response.data[0].embedding
     # replace with huggingFace embedding module
-    return_list = Embeddings_HF.embed_texts([text])[0]
+
+    
+    return_list = Embeddings_HF.embed_texts([text])[0].tolist()
     print(f"Embedding dimension: {len(return_list)}")  # should print 384
 
     return return_list
@@ -79,7 +81,7 @@ def retrieve(question, k=20):
     #    np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
     retrieved_chunks = VectorStore_Chroma.search(
-        query_embedding=question_embedding.tolist(), k=20
+        query_embedding=question_embedding, k=20
     )
 
     end = time.time()
