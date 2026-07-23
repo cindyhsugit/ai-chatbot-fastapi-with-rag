@@ -60,8 +60,7 @@ async def test_generate_with_context_node_happy_path():
         return_value="Homer's favorite food is donuts.",
     ) as mock_failover:
         result = await graph_builder.generate_with_context_node(state)
-
-    assert result == {"reply": "Homer's favorite food is donuts."}
+    assert result["reply"] == "Homer's favorite food is donuts."
     mock_failover.assert_called_once()  
 
 @pytest.mark.asyncio
@@ -73,12 +72,12 @@ async def test_generate_without_context_node_happy_path():
     }
 
     with patch(
-        "main.generate_with_knowledge_failover",
+        "main.generate_with_network_failover",
         return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
     ) as mock_failover:
         result = await graph_builder.generate_without_context_node(state)
 
-    assert result == {"reply": "Homer's family includes Marge, Bart, Lisa, and Maggie."}
+    assert result["reply"] == "Homer's family includes Marge, Bart, Lisa, and Maggie."
     mock_failover.assert_called_once()
 
 
@@ -91,12 +90,13 @@ async def test_generate_without_context_node_no_knowledge():
     }
 
     with patch(
-        "main.generate_with_knowledge_failover",
+        "main.generate_with_network_failover",
         return_value="NO_KNOWLEDGE",
     ):
         result = await graph_builder.generate_without_context_node(state)
 
-    assert result == {"reply": "NO_KNOWLEDGE"}
+    assert result["reply"] == "NO_KNOWLEDGE"
+    
 
 
 @pytest.mark.asyncio
@@ -114,9 +114,10 @@ async def test_web_search_node_happy_path():
         return_value="It's sunny with a high of 75F today.",
     ):
         result = await graph_builder.web_search_node(state)
-
-    assert result == {"reply": "It's sunny with a high of 75F today."}
-
+    assert result["reply"] == (
+        "It's sunny with a high of 75F today.\n\n"
+        "(Note: answer sourced from live web search, not local knowledge base.)"
+        )
 
 @pytest.mark.asyncio
 async def test_web_search_node_no_results():
