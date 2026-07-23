@@ -44,6 +44,8 @@ def get_embedding(text):
     # return_list = response.data[0].embedding
     # replace with huggingFace embedding module
 
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("text must be a non-empty string")
     
     return_list = Embeddings_HF.embed_texts([text])[0].tolist()
     print(f"Embedding dimension: {len(return_list)}")  # should print 384
@@ -118,13 +120,33 @@ def retrieve(question, k=20):
     return reranked_chunks
 
 
+
+
+def safely_open_input_file() -> str:
+    filename = os.environ.get("INPUT_FILE")
+    if not filename:
+        raise SystemExit("INPUT_FILE environment variable is not set")
+
+    path = Path(filename)
+    if not path.exists():
+        raise SystemExit(f"Input file not found: {filename}")
+
+    if path.is_dir():
+        raise SystemExit(f"Expected a file, got a directory: {filename}")
+
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise SystemExit(f"Could not decode {filename} as UTF-8: {e}")
+    except PermissionError:
+        raise SystemExit(f"Permission denied reading file: {filename}")
+    
 if __name__ == "__main__":
     print(
         "This file builds a search index when imported — run main.py instead of this file directly."
     )
 else:
-    filename = os.environ["INPUT_FILE"]
-    text = Path(filename).read_text(encoding="utf-8")
+    text = safely_open_input_file()
 
     start = time.time()
     # Generate embeddings for each chunk

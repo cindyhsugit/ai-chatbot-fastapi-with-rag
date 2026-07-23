@@ -4,14 +4,16 @@ import pytest
 
 # test 1 happy path
 def test_get_embedding_happy_path():
-   assert(isinstance(get_embedding("abcde"), np.ndarray))
+    result = get_embedding("abcde")
+    assert isinstance(result, list)
+    assert len(result) == 384
+    assert all(isinstance(x, float) for x in result)
 
-# test 1 error path
-def test_get_embedding_error_path():
-    assert(isinstance(get_embedding(" "), np.ndarray))
+def test_get_embedding_whitespace_input_raises():
+    with pytest.raises(ValueError, match="non-empty string"):
+        get_embedding(" ")
 
 
-# test 1 edge case 
-def test_get_embedding_edge_case():
-    with pytest.raises(ValueError):
-        get_embedding(None)
+def test_get_embedding_none_input_raises():
+    with pytest.raises(ValueError, match="non-empty string"):
+        get_embedding(None)    

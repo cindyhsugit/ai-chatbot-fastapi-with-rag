@@ -142,7 +142,7 @@ async def generate_with_knowledge_failover(
     question: str, prompt: str, history: list
 ) -> str:
     """
-    Runs the prompt through generate_with_failover, and if the model
+    Runs the prompt through generate_with_llm_failover, and if the model
     signals NO_KNOWLEDGE, falls back to web search + a grounded
     regeneration (also via generate_with_failover, so failover applies
     to that call too).
@@ -231,11 +231,8 @@ def healthAPIEndpoint():
 
 @app.post("/langgraphchat")
 async def langgraphchat(request: ChatRequest):
-    # session_id = request.session_id
-    # history = session_store.get(session_id, [])
-
-    session_id = ""
-    history = []
+    session_id = request.session_id
+    history = session_store.get(session_id, [])
 
     initial_state = {
         "question": request.message,
@@ -248,15 +245,19 @@ async def langgraphchat(request: ChatRequest):
     }
 
     start = time.time()
-    result = await graph.ainvoke(
-        initial_state, config={"configurable": {"thread_id": session_id}}
-    )
+    try:
+        result = await graph.ainvoke(
+            initial_state, config={"configurable": {"thread_id": session_id}}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     elapsed = time.time() - start
     print(f"LangGraph total time: {elapsed:.2f}s")
     # update session history with this turn, same as your /chat endpoint likely does
-    # history.append({"role": "user", "content": request.message})
-    # history.append({"role": "assistant", "content": result["reply"]})
-    # session_store[session_id] = history
+    history.append({"role": "user", "content": request.message})
+    history.append({"role": "assistant", "content": result["reply"]})
+    session_store[session_id] = history
 
     return {"reply": result["reply"]}
 
