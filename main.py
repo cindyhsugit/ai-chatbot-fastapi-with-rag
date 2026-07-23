@@ -106,7 +106,7 @@ async def langgraph(request: Request):
 import rag_tasks
 
 
-async def generate_with_network_failover(
+async def generate_with_llm_failover(
     prompt: str, messages_override: list = None
 ) -> str:
     """
@@ -149,7 +149,7 @@ async def generate_with_knowledge_failover(
     """
     messages_to_send = history + [{"role": "user", "content": prompt}]
 
-    reply = await generate_with_network_failover(prompt, messages_to_send)
+    reply = await generate_with_llm_failover(prompt, messages_to_send)
     if reply.strip() == "NO_KNOWLEDGE":
         web_results = await web_search_fallback(question)
 
@@ -158,7 +158,7 @@ async def generate_with_knowledge_failover(
 
         grounded_prompt = construct_prompt(CONTEXT_ONLY_RULE, question, web_results)
 
-        reply = await generate_with_network_failover(grounded_prompt)
+        reply = await generate_with_llm_failover(grounded_prompt)
         reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
 
     return reply

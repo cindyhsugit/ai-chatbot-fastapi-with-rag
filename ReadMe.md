@@ -10,7 +10,7 @@ See the [detail structure](diagram_detail.md) for more.
   - HuggingFace open-source embeddings (`all-MiniLM-L6-v2`), no paid embedding API dependency.
   - Two-stage retrieval: **ChromaDB** search (top-20 candidates), then a HuggingFace cross-encoder (`ms-marco-MiniLM-L-6-v2`) reranks down to the top-3.
   - **Two-tier failover, decoupled from each other:**
-    1. *Network failover* (`generate_with_network_failover`): tries OpenAI first, falls back to Gemini on any exception (rate limit, timeout, outage).
+    1. *Network failover* (`generate_with_llm_failover`): tries OpenAI first, falls back to Gemini on any exception (rate limit, timeout, outage).
     2. *Knowledge failover* (`generate_with_knowledge_failover`): if the model responds with the sentinel `NO_KNOWLEDGE` (meaning local context AND the model's own trained knowledge both came up empty), falls back to a live Tavily web search, then re-generates a grounded answer from those results — routed through the same network-failover call, so a provider outage during the correction step is still covered.
   - Prompt rules extracted into `prompt_rules.py` (`CONTEXT_ONLY_RULE`, `CONTEXT_TRAINED_DATA_ONLY_RULE`) so `main.py` isn't cluttered with long prompt strings, and the rules are independently testable/tunable.
   - Answers sourced from the web-search fallback are labeled in the reply (`"(Note: answer sourced from live web search, not local knowledge base.)"`) so it's clear when the pipeline had to leave the local knowledge base.
@@ -25,11 +25,11 @@ question + session_id
   → cross-encoder rerank (top-3)
   → construct_prompt(CONTEXT_TRAINED_DATA_ONLY_RULE, ...)
   → generate_with_knowledge_failover(question, prompt, history)
-        → generate_with_network_failover (OpenAI → Gemini on failure)
+        → generate_with_llm_failover (OpenAI → Gemini on failure)
         → if reply == "NO_KNOWLEDGE":
               → Tavily web search
               → construct_prompt(CONTEXT_ONLY_RULE, ...) on web results
-              → generate_with_network_failover again (OpenAI → Gemini on failure)
+              → generate_with_llm_failover again (OpenAI → Gemini on failure)
   → append (question, reply) to this session's history
   → reply
 ```
@@ -85,7 +85,7 @@ Retrieval (embedding → FAISS search → rerank) totals ~1.05s; generation domi
 ![test coverage](main_coverage.png)
 Full pytest suite under `test/` — **39 tests, 99% statement coverage**, one file per module:
 - `test_chunking.py`, `test_retrieval.py`, `test_reranker.py`, `test_embedding.py`, `test_chromadb.py` — core RAG pipeline pieces
-- `test_main.py` — `construct_prompt`, `generate_with_network_failover`, `generate_with_knowledge_failover`
+- `test_main.py` — `construct_prompt`, `generate_with_llm_failover`, `generate_with_knowledge_failover`
 - `test_api.py` — `/chat` and `/health` endpoints, including provider-failure and validation error paths
 - `test_gemini_provider.py`, `test_web_search_provider.py` — failover and CRAG web-search fallback providers
 - `test_utils.py` — shared helpers

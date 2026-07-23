@@ -1,19 +1,19 @@
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 import pytest
-from main import generate_with_network_failover
+from main import generate_with_llm_failover
 from main import generate_with_knowledge_failover
 from main import construct_prompt
 import prompt_rules
 import asyncio
 
 @patch("main.async_client.chat.completions.create", new_callable=AsyncMock)
-def test_generate_with_network_failover_happy_path(mock_openai):
+def generate_with_llm_failover(mock_openai):
     mock_openai.return_value = type(
         "Response", (), {"choices": [type("Choice", (), {"message": type("Msg", (), {"content": "hello back"})()})]}
     )()
 
-    result = asyncio.run(generate_with_network_failover("promptstr"))
+    result = asyncio.run(generate_with_llm_failover("promptstr"))
 
     assert isinstance(result, str)
     assert result == "hello back"
@@ -21,17 +21,17 @@ def test_generate_with_network_failover_happy_path(mock_openai):
 
 @patch("main.gemini_provider.generate_answer_gemini", new_callable=AsyncMock)
 @patch("main.async_client.chat.completions.create", new_callable=AsyncMock)
-def test_generate_with_network_failover_openai_fails_uses_gemini(mock_openai, mock_gemini):
+def test_generate_with_llm_failover_openai_fails_uses_gemini(mock_openai, mock_gemini):
     mock_openai.side_effect = Exception("OpenAI is down")
     mock_gemini.return_value = "Fallback answer from Gemini."
 
-    result = asyncio.run(generate_with_network_failover("promptstr"))
+    result = asyncio.run(generate_with_llm_failover("promptstr"))
 
     assert result == "Fallback answer from Gemini."
     mock_gemini.assert_called_once()  # confirms it actually fell back, not just returned something
 
 
-@patch("main.generate_with_network_failover", new_callable=AsyncMock)
+@patch("main.generate_with_llm_failover", new_callable=AsyncMock)
 def test_generate_with_knowledge_failover_happy_path(mock_generate):
     # happy path: the model answers normally, no NO_KNOWLEDGE, no web search needed
     mock_generate.return_value = "Homer Simpson's favorite food is broccoli casserole."
@@ -46,7 +46,7 @@ def test_generate_with_knowledge_failover_happy_path(mock_generate):
 
 
 @patch("main.web_search_fallback", new_callable=AsyncMock)
-@patch("main.generate_with_network_failover", new_callable=AsyncMock)
+@patch("main.generate_with_llm_failover", new_callable=AsyncMock)
 def test_generate_with_knowledge_failover_error_path_no_web_results(
     mock_generate, mock_web_search
 ):
@@ -65,7 +65,7 @@ def test_generate_with_knowledge_failover_error_path_no_web_results(
 
 
 @patch("main.web_search_fallback", new_callable=AsyncMock)
-@patch("main.generate_with_network_failover", new_callable=AsyncMock)
+@patch("main.generate_with_llm_failover", new_callable=AsyncMock)
 def test_generate_with_knowledge_failover_edge_case_whitespace_around_sentinel(
     mock_generate, mock_web_search
 ):
@@ -81,7 +81,7 @@ def test_generate_with_knowledge_failover_edge_case_whitespace_around_sentinel(
     assert isinstance(result, str)
     assert "Grounded answer from the web." in result
 
-@patch("main.generate_with_network_failover", new_callable=AsyncMock)
+@patch("main.generate_with_llm_failover", new_callable=AsyncMock)
 def test_generate_with_knowledge_failover_passes_history_through(mock_generate):
     mock_generate.return_value = "some answer"
     prior_history = [{"role": "user", "content": "earlier question"},
@@ -89,7 +89,7 @@ def test_generate_with_knowledge_failover_passes_history_through(mock_generate):
 
     asyncio.run(generate_with_knowledge_failover("new question", "promptstr", prior_history))
 
-    # confirm history was included in the messages sent to generate_with_network_failover
+    # confirm history was included in the messages sent to generate_with_llm_failover
     call_args = mock_generate.call_args
     messages_sent = call_args[0][1]  # second positional arg: messages_override
     assert prior_history[0] in messages_sent

@@ -57,7 +57,7 @@ async def test_web_search_node_uses_web_search_rule():
 
     with patch("graph_builder.web_search_provider.web_search_fallback", new=AsyncMock(return_value="some search result text")), \
          patch("main.construct_prompt") as mock_construct_prompt, \
-         patch("main.generate_with_network_failover", new=AsyncMock(return_value="a synthesized answer")):
+         patch("main.generate_with_llm_failover", new=AsyncMock(return_value="a synthesized answer")):
 
         mock_construct_prompt.return_value = "built prompt"
 

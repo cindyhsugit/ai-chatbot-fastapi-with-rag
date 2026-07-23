@@ -38,7 +38,7 @@ async def test_graph_routes_low_score_to_web_search():
 
     with patch(
         "graph_builder.rag_tasks.retrieve", return_value=[("irrelevant chunk", -5.0)]
-    ), patch("main.generate_with_network_failover", return_value="Some answer"):
+    ), patch("main.generate_with_llm_failover", return_value="Some answer"):
         result = await compiled.ainvoke({"question": "some question", "history": []})
 
     assert result["reply"] == "Some answer"
@@ -58,7 +58,7 @@ async def test_generate_with_context_node_wired_into_graph():
     }
 
     with patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's favorite food is donuts.",
     ):
         result = await compiled.ainvoke(initial_state)
@@ -83,7 +83,7 @@ async def test_generate_without_context_node_wired_into_graph():
     }
 
     with patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
     ):
         result = await compiled.ainvoke(initial_state)
@@ -140,7 +140,7 @@ async def test_full_graph_routes_to_web_search_on_no_knowledge():
         "web_search_provider.web_search_fallback",
         return_value="Some fact found via web search.",
     ), patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's cholesterol level was mentioned as high in that episode.",
     ):
         result = await compiled.ainvoke(initial_state)
@@ -192,7 +192,7 @@ async def test_full_graph_end_to_end_with_context():
         "graph_builder.rag_tasks.retrieve",
         return_value=[("Homer loves donuts.", 0.5)],
     ), patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's favorite food is donuts.",
     ):
         result = await compiled.ainvoke(initial_state)
@@ -241,7 +241,7 @@ async def test_full_graph_end_to_end_without_context():
             ("irrelevant chunk", -5.0)
         ],  # low score -> generate_without_context
     ), patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",  # not NO_KNOWLEDGE
     ):
         result = await compiled.ainvoke(initial_state)

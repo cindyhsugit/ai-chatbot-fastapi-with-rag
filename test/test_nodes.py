@@ -56,7 +56,7 @@ async def test_generate_with_context_node_happy_path():
     }
 
     with patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's favorite food is donuts.",
     ) as mock_failover:
         result = await graph_builder.generate_with_context_node(state)
@@ -72,7 +72,7 @@ async def test_generate_without_context_node_happy_path():
     }
 
     with patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
     ) as mock_failover:
         result = await graph_builder.generate_without_context_node(state)
@@ -90,7 +90,7 @@ async def test_generate_without_context_node_no_knowledge():
     }
 
     with patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="NO_KNOWLEDGE",
     ):
         result = await graph_builder.generate_without_context_node(state)
@@ -110,7 +110,7 @@ async def test_web_search_node_happy_path():
         "web_search_provider.web_search_fallback",
         return_value="Today's weather is sunny with a high of 75F.",
     ), patch(
-        "main.generate_with_network_failover",
+        "main.generate_with_llm_failover",
         return_value="It's sunny with a high of 75F today.",
     ):
         result = await graph_builder.web_search_node(state)

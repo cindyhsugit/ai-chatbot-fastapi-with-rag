@@ -6,7 +6,7 @@ import operator
 import prompt_rules
 from langgraph.graph import StateGraph, END
 import web_search_provider
-
+from langchain_core.messages import BaseMessage
 from openai import OpenAI
 from openai import AsyncOpenAI
 
@@ -47,7 +47,8 @@ class ChatState(TypedDict):
 #     {"role": "assistant", "content": "Paris has a population of about 2.1 million people."},
 # ]
 
-def convert_to_gemini_messages(history):
+
+def convert_to_gemini_messages(history: list[BaseMessage | dict]) -> list[dict]:
     result = []
     for msg in history:
         if isinstance(msg, dict):
@@ -61,7 +62,9 @@ def convert_to_gemini_messages(history):
         result.append({"role": gemini_role, "parts": [{"text": content}]})
     return result
 
-def convert_to_openai_messages(history):
+
+
+def convert_to_openai_messages(history: list[BaseMessage | dict]) -> list[dict[str, str]]:
     result = []
     for msg in history:
         if isinstance(msg, dict):
@@ -125,9 +128,9 @@ async def generate_with_context_node(state: ChatState) -> dict:
 
     messages = history + [{"role": "user", "content": prompt}]
 
-    from main import generate_with_network_failover
+    from main import generate_with_llm_failover
     
-    reply = await generate_with_network_failover(
+    reply = await generate_with_llm_failover(
         prompt=prompt, messages_override=convert_to_openai_messages(messages)
     )
 
@@ -150,9 +153,9 @@ async def generate_without_context_node(state: ChatState) -> dict:
     )
 
     messages = history + [{"role": "user", "content": prompt}]
-    from main import generate_with_network_failover
+    from main import generate_with_llm_failover
 
-    reply = await generate_with_network_failover(
+    reply = await generate_with_llm_failover(
         prompt=prompt, messages_override=convert_to_openai_messages(messages)
     )
     return {"reply": reply, 
@@ -177,9 +180,9 @@ async def web_search_node(state: ChatState) -> dict:
 
     history = state["history"]
     messages = history + [{"role": "user", "content": prompt}]
-    from main import generate_with_network_failover
+    from main import generate_with_llm_failover
 
-    reply = await generate_with_network_failover(
+    reply = await generate_with_llm_failover(
         prompt=prompt, messages_override=convert_to_openai_messages(messages)
     )
     reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
@@ -220,9 +223,8 @@ def build_graph(checkpointer=None):
     return graph.compile(checkpointer=checkpointer)
 
 
-graph = build_graph()
-
-# ASCII in the terminal, zero dependencies
-print(graph.get_graph().draw_ascii())
-# saves a PNG you can open directly
-graph.get_graph().draw_mermaid_png(output_file_path="graph_diagram.png")
+if __name__ == "__main__":
+    from langgraph.checkpoint.memory import MemorySaver
+    debug_graph = build_graph(MemorySaver())
+    print(debug_graph.get_graph().draw_ascii())
+    debug_graph.get_graph().draw_mermaid_png(output_file_path="graph_diagram.png")
