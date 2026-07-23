@@ -13,22 +13,25 @@ import reranker_hf as Reranker_HF
 import time
 import vectorstore_chroma as VectorStore_Chroma
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
 
 # Chunk text
 # chunk_text(text: str, chunk_size: int = 500) -> List[str]:
-def chunk_text(text, chunk_size=500):
-    words = text.split()
-    chunks = []
-    # range(start, stop, step) — here start=0, stop=len(words)
-    # (the total number of words), step=chunk_size (500)
-    for i in range(0, len(words), chunk_size):
+# def chunk_text(text, chunk_size=500):
+#     words = text.split()
+#     chunks = []
+#     # range(start, stop, step) — here start=0, stop=len(words)
+#     # (the total number of words), step=chunk_size (500)
+#     for i in range(0, len(words), chunk_size):
 
-        # grab words starting at position i, up to (but not including) position i + chunk_size
-        slicedWords = words[i : i + chunk_size]
+#         # grab words starting at position i, up to (but not including) position i + chunk_size
+#         slicedWords = words[i : i + chunk_size]
 
-        chunk = " ".join(slicedWords)
-        chunks.append(chunk)
-    return chunks
+#         chunk = " ".join(slicedWords)
+#         chunks.append(chunk)
+#     return chunks
 
 
 # client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -48,8 +51,7 @@ def get_embedding(text):
         raise ValueError("text must be a non-empty string")
     
     return_list = Embeddings_HF.embed_texts([text])[0].tolist()
-    print(f"Embedding dimension: {len(return_list)}")  # should print 384
-
+    
     return return_list
 
 
@@ -121,7 +123,7 @@ def retrieve(question, k=20):
 
 
 
-
+# Returns the file's text content, or exits cleanly with a clear message if anything goes wrong
 def safely_open_input_file() -> str:
     filename = os.environ.get("INPUT_FILE")
     if not filename:
@@ -146,15 +148,22 @@ if __name__ == "__main__":
         "This file builds a search index when imported — run main.py instead of this file directly."
     )
 else:
-    text = safely_open_input_file()
+    loaded_text = safely_open_input_file()
+
+    # initializing chunking style
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50,
+    )
 
     start = time.time()
     # Generate embeddings for each chunk
     # chunks: List[str] = chunk_text(text)
     # example: ["apple", "banana"]
-    chunks = chunk_text(text)
+    #chunks = chunk_text(text)
+    chunks = text_splitter.split_text(loaded_text)
     end = time.time()
-    print(f"chunk_text Time: {end-start:.2f}s")
+    # print(f"chunk_text Time: {end-start:.2f}s")
 
     # Turn each chunk into an embedding (a list of numbers representing
     # its meaning)
@@ -174,6 +183,9 @@ else:
         embedding = get_embedding(chunk)
         embeddings.append(embedding)
     end = time.time()
+
+    print(f"Embedding dimension: {len(embeddings[0])}")  # should print 384
+    
     print(f"hugging face embedding Time: {end-start:.2f}s")
     # list comprehension version
     # embeddings = [get_embedding(chunk) for chunk in chunks]
