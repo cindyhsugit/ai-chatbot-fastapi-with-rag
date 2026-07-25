@@ -34,7 +34,7 @@ from logging_config import setup_logging
 load_dotenv("apiKey.env")
 load_dotenv(".env")
 
-from providers import openai_provider, gemini_provider
+import providers.openai_provider, providers.gemini_provider
 
 import time
 
@@ -47,6 +47,11 @@ import graph_builder
 from langgraph.checkpoint.memory import MemorySaver
 
 from langchain_openai import ChatOpenAI
+
+from langchain_core.prompts import ChatPromptTemplate
+
+import rag_tasks
+import utility.unify_response_content
 
 # OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -70,7 +75,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # When the browser asks for /static/..., serve files from the static folder
 app.mount("/static", StaticFiles(directory="static"), name="static")
-#  tells FastAPI where your HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
+#  tells FastAPI where the HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
@@ -89,6 +94,11 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+backup_llm = providers.openai_provider.openai_llm.with_fallbacks(
+    [providers.gemini_provider.gemini_llm]
+)
+
+
 # home page route
 @app.get("/", response_class=HTMLResponse)
 # when visits /, run this function and return HTML. The request is needed for template rendering
@@ -104,9 +114,6 @@ async def langgraph(request: Request):
     )
 
 
-import rag_tasks
-
-
 async def generate_with_llm_failover(
     prompt: str, messages_override: list = None
 ) -> str:
@@ -115,30 +122,9 @@ async def generate_with_llm_failover(
     Returns the reply string. Used for both the initial answer attempt
     and the grounded (post-web-search) re-generation.
     """
-
-    try:
-        start = time.time()
-
-        response = await openai_provider.generate_answer_openai(
-            prompt,
-            messages_override or [HumanMessage(content=prompt)],
-        )
-
-        elapsed = time.time() - start
-        print(f"OpenAI response time: {elapsed:.2f} seconds")
-        return response
-
-    except Exception as e:
-        print(f"OpenAI failed: {e}, falling back to Gemini")
-        start = time.time()
-
-        response = await gemini_provider.generate_answer_gemini(
-            prompt, history=messages_override
-        )
-
-        elapsed = time.time() - start
-        print(f"Gemini response time: {elapsed:.2f} seconds")
-        return response
+    messages = messages_override or [HumanMessage(content=prompt)]
+    response = await backup_llm.ainvoke(messages)
+    return utility.unify_response_content.to_text(response.content)
 
 
 async def generate_with_knowledge_failover(
@@ -167,7 +153,13 @@ async def generate_with_knowledge_failover(
     return reply
 
 
-def construct_prompt(rules: str, context: str, question: str) -> str:
+#fmt: off
+def construct_prompt(
+        rules: str, 
+        context: str, 
+        question: str
+        ) -> str:
+#fmt: on
     return f"""
 {rules}
 

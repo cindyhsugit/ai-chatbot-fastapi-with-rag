@@ -6,6 +6,7 @@ import asyncio
 import graph_builder
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv("apikey.env")
 
@@ -18,11 +19,14 @@ gemini_llm = ChatGoogleGenerativeAI(
     wait_exponential_jitter=True,
 )
 
+# # fmt: off
+# async def generate_answer_gemini(
+#     prompt: str, 
+#     history: list | None = None, 
+#     max_retries: int = 3
+# ) -> str:
+# # fmt: on
+#     messages = (history or []) + [HumanMessage(content=prompt)]
 
-async def generate_answer_gemini(
-    prompt: str, history: list | None = None, max_retries: int = 3
-) -> str:
-    messages = (history or []) + [HumanMessage(content=prompt)]
-
-    response = await gemini_llm.ainvoke(messages)
-    return response.content
+#     response = await gemini_llm.ainvoke(messages)
+#     return response.content
