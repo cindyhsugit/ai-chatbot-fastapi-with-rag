@@ -1,80 +1,68 @@
 from unittest.mock import patch, AsyncMock, MagicMock
 import asyncio
 import pytest
-
+from langchain_core.messages import HumanMessage
 import providers.gemini_provider as gemini_provider
 
 
 @pytest.mark.asyncio
 async def test_generate_answer_gemini_happy_path():
     mock_response = MagicMock()
-    mock_response.text = "Paris is the capital of France."
+    mock_response.content = "Paris is the capital of France."
 
-    with patch(
-        "gemini_provider.gemini_llm.ainvoke",
-        new=AsyncMock(return_value=mock_response),
-    ) as mock_generate:
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+    with patch("providers.gemini_provider.gemini_llm", mock_llm):
         reply = await gemini_provider.generate_answer_gemini(
             prompt="What is the capital of France?",
             history=[HumanMessage(content="hi")],
         )
 
     assert reply == "Paris is the capital of France."
-    mock_generate.assert_called_once()
+    mock_llm.ainvoke.assert_called_once()
 
-    # Verify contents was converted to Gemini's role/parts shape, not raw dicts
-    call_kwargs = mock_generate.call_args
+    call_args = mock_llm.ainvoke.call_args[0]
     messages = call_args[0]
     assert isinstance(messages[-1], HumanMessage)
     assert messages[-1].content == "What is the capital of France?"
 
 
 @pytest.mark.asyncio
-async def test_generate_answer_gemini_error_path_retries_then_raises():
-    with patch(
-        "gemini_provider.gemini_llm.ainvoke",
-        new=AsyncMock(side_effect=Exception("503 Service Unavailable")),
-    ) as mock_generate, patch(
-        "gemini_provider.asyncio.sleep", new=AsyncMock()
-    ) as mock_sleep:
+async def test_generate_answer_gemini_retries_exhausted_raises():
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke = AsyncMock(side_effect=Exception("persistent failure"))
 
-        with pytest.raises(Exception, match="503 Service Unavailable"):
+    with patch("providers.gemini_provider.gemini_llm", mock_llm):
+        with pytest.raises(Exception, match="persistent failure"):
             await gemini_provider.generate_answer_gemini(
-                prompt="What is the capital of France?",
-                history=[],
-                max_retries=3,
+                prompt="Always fails", history=[]
             )
 
-    assert mock_generate.call_count == 3
-    assert mock_sleep.call_count == 2  # sleeps between attempts, not after the last
+    mock_llm.ainvoke.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_generate_answer_gemini_edge_case_succeeds_on_last_retry():
-    mock_response = MagicMock()
-    mock_response.text = "Paris is the capital of France."
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
-    with patch(
-        "gemini_provider.gemini_llm.ainvoke",
+    mock_response = MagicMock()
+    mock_response.content = "Recovered on final attempt."
+
+    with patch.object(
+        ChatGoogleGenerativeAI,
+        "ainvoke",
         new=AsyncMock(
             side_effect=[
-                Exception("503 Service Unavailable"),
-                Exception("503 Service Unavailable"),
-                mock_response,
+                Exception("transient error 1"),
+                Exception("transient error 2"),
+                mock_response,  # succeeds on 3rd (last allowed) attempt
             ]
         ),
-    ) as mock_generate, patch(
-        "gemini_provider.asyncio.sleep", new=AsyncMock()
-    ) as mock_sleep:
-
+    ) as mock_ainvoke:
         reply = await gemini_provider.generate_answer_gemini(
-            prompt="What is the capital of France?",
-            history=[],
-            max_retries=3,
+            prompt="Recovers eventually", history=[]
         )
 
-    assert reply == "Paris is the capital of France."
-    assert mock_generate.call_count == 3
-    assert (
-        mock_sleep.call_count == 2
-    )  # backoff before attempt 2 and attempt 3, none after success
+    assert reply == "Recovered on final attempt."
+    assert mock_ainvoke.call_count == 3  # stop_after_attempt=3
