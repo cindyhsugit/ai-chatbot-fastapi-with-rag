@@ -6,7 +6,8 @@ import operator
 import prompt_rules
 from langgraph.graph import StateGraph, END
 import web_search_provider
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+
 from openai import OpenAI
 from openai import AsyncOpenAI
 
@@ -21,6 +22,8 @@ RERANK_SCORE_THRESHOLD = 0.0
 
 from typing import Annotated
 from langgraph.graph.message import add_messages
+from langchain_openai import ChatOpenAI
+
 
 class ChatState(TypedDict):
     question: str
@@ -31,15 +34,16 @@ class ChatState(TypedDict):
     reply: str
     retry_count: int
 
-#open AI expect "role" of "user" or "assistant" in message
-#input
+
+# open AI expect "role" of "user" or "assistant" in message
+# input
 # history = [
 #     HumanMessage(content="What's the capital of France?"),
 #     AIMessage(content="The capital of France is Paris."),
 #     HumanMessage(content="What's its population?"),
 #     AIMessage(content="Paris has a population of about 2.1 million people."),
 # ]
-#output
+# output
 # [
 #     {"role": "user", "content": "What's the capital of France?"},
 #     {"role": "assistant", "content": "The capital of France is Paris."},
@@ -47,34 +51,6 @@ class ChatState(TypedDict):
 #     {"role": "assistant", "content": "Paris has a population of about 2.1 million people."},
 # ]
 
-
-def convert_to_gemini_messages(history: list[BaseMessage | dict]) -> list[dict]:
-    result = []
-    for msg in history:
-        if isinstance(msg, dict):
-            role = msg["role"]
-            content = msg["content"]
-        else:
-            role = "human" if msg.type == "human" else "ai"
-            content = msg.content
-
-        gemini_role = "model" if role in ("assistant", "ai") else "user"
-        result.append({"role": gemini_role, "parts": [{"text": content}]})
-    return result
-
-
-
-def convert_to_openai_messages(history: list[BaseMessage | dict]) -> list[dict[str, str]]:
-    result = []
-    for msg in history:
-        if isinstance(msg, dict):
-            role = msg["role"]
-            content = msg["content"]
-        else:
-            role = "user" if msg.type == "human" else "assistant"
-            content = msg.content
-        result.append({"role": role, "content": content})
-    return result
 
 def retrieve_and_rerank_node(state: ChatState) -> dict:
     """
@@ -126,20 +102,19 @@ async def generate_with_context_node(state: ChatState) -> dict:
         rules=prompt_rules.CONTEXT_ONLY_RULE, context=context_text, question=question
     )
 
-    messages = history + [{"role": "user", "content": prompt}]
+    messages = history + [HumanMessage(content=prompt)]
 
     from main import generate_with_llm_failover
-    
-    reply = await generate_with_llm_failover(
-        prompt=prompt, messages_override=convert_to_openai_messages(messages)
-    )
 
-    return {"reply": reply,
-             "history": [
-                 {"role": "user", "content": question},
-                 {"role": "assistant", "content": reply},
-                 ],
-                 }
+    reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
+
+    return {
+        "reply": reply,
+        "history": [
+            HumanMessage(content=question),
+            AIMessage(content=reply),
+        ],
+    }
 
 
 async def generate_without_context_node(state: ChatState) -> dict:
@@ -149,21 +124,22 @@ async def generate_without_context_node(state: ChatState) -> dict:
     from main import construct_prompt
 
     prompt = construct_prompt(
-        rules=prompt_rules.NO_CONTEXT_RULE, context="", question=question
+        rules=prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE, context="", question=question
     )
 
-    messages = history + [{"role": "user", "content": prompt}]
+    messages = history + [HumanMessage(content=prompt)]
     from main import generate_with_llm_failover
 
-    reply = await generate_with_llm_failover(
-        prompt=prompt, messages_override=convert_to_openai_messages(messages)
-    )
-    return {"reply": reply, 
-            "history": [
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": reply},
-                ],
-                }
+    reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
+    print(f"generate_without_context_node: {reply} *****")
+
+    return {
+        "reply": reply,
+        "history": [
+            HumanMessage(content=question),
+            AIMessage(content=reply),
+        ],
+    }
 
 
 async def web_search_node(state: ChatState) -> dict:
@@ -179,20 +155,19 @@ async def web_search_node(state: ChatState) -> dict:
     prompt = construct_prompt(prompt_rules.WEB_SEARCH_RULE, web_results, question)
 
     history = state["history"]
-    messages = history + [{"role": "user", "content": prompt}]
+    messages = history + [HumanMessage(content=prompt)]
     from main import generate_with_llm_failover
 
-    reply = await generate_with_llm_failover(
-        prompt=prompt, messages_override=convert_to_openai_messages(messages)
-    )
+    reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
     reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
-    
-    return {"reply": reply,
-            "history": [
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": reply},
-                ],
-                }
+
+    return {
+        "reply": reply,
+        "history": [
+            HumanMessage(content=question),
+            AIMessage(content=reply),
+        ],
+    }
 
 
 def build_graph(checkpointer=None):
@@ -225,6 +200,7 @@ def build_graph(checkpointer=None):
 
 if __name__ == "__main__":
     from langgraph.checkpoint.memory import MemorySaver
+
     debug_graph = build_graph(MemorySaver())
     print(debug_graph.get_graph().draw_ascii())
     debug_graph.get_graph().draw_mermaid_png(output_file_path="graph_diagram.png")

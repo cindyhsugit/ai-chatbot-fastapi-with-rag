@@ -34,10 +34,9 @@ from logging_config import setup_logging
 load_dotenv("apiKey.env")
 load_dotenv(".env")
 
-import gemini_provider
+from providers import openai_provider, gemini_provider
 
 import time
-
 
 from web_search_provider import web_search_fallback
 
@@ -46,6 +45,8 @@ from prompt_rules import CONTEXT_ONLY_RULE, CONTEXT_TRAINED_DATA_ONLY_RULE
 import graph_builder
 
 from langgraph.checkpoint.memory import MemorySaver
+
+from langchain_openai import ChatOpenAI
 
 # OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -114,28 +115,30 @@ async def generate_with_llm_failover(
     Returns the reply string. Used for both the initial answer attempt
     and the grounded (post-web-search) re-generation.
     """
+
     try:
         start = time.time()
-        response = await async_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages_override or [{"role": "user", "content": prompt}],
+
+        response = await openai_provider.generate_answer_openai(
+            prompt,
+            messages_override or [HumanMessage(content=prompt)],
         )
 
         elapsed = time.time() - start
         print(f"OpenAI response time: {elapsed:.2f} seconds")
-        return response.choices[0].message.content
+        return response
 
     except Exception as e:
         print(f"OpenAI failed: {e}, falling back to Gemini")
         start = time.time()
 
-        reply = await gemini_provider.generate_answer_gemini(
+        response = await gemini_provider.generate_answer_gemini(
             prompt, history=messages_override
         )
 
         elapsed = time.time() - start
         print(f"Gemini response time: {elapsed:.2f} seconds")
-    return reply
+        return response
 
 
 async def generate_with_knowledge_failover(
@@ -147,7 +150,7 @@ async def generate_with_knowledge_failover(
     regeneration (also via generate_with_failover, so failover applies
     to that call too).
     """
-    messages_to_send = history + [{"role": "user", "content": prompt}]
+    messages_to_send = history + [HumanMessage(content=prompt)]
 
     reply = await generate_with_llm_failover(prompt, messages_to_send)
     if reply.strip() == "NO_KNOWLEDGE":
@@ -232,11 +235,10 @@ def healthAPIEndpoint():
 @app.post("/langgraphchat")
 async def langgraphchat(request: ChatRequest):
     session_id = request.session_id
-    history = session_store.get(session_id, [])
 
     initial_state = {
         "question": request.message,
-        "history": history,
+        "history": [],
         "session_id": session_id,
         "retrieved_chunks": [],
         "score": 0.0,
@@ -251,14 +253,9 @@ async def langgraphchat(request: ChatRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
+
     elapsed = time.time() - start
     print(f"LangGraph total time: {elapsed:.2f}s")
-    # update session history with this turn, same as your /chat endpoint likely does
-    history.append({"role": "user", "content": request.message})
-    history.append({"role": "assistant", "content": result["reply"]})
-    session_store[session_id] = history
-
     return {"reply": result["reply"]}
 
 

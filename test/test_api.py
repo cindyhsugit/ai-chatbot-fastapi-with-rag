@@ -2,22 +2,28 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 import pytest
 from main import app
+import requests
 
 client = TestClient(app)
+
 
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
-    
-# using TestClient    
+
+
+# using TestClient
 def test_chat_endpoint_happy_path():
-    response = client.post("/chat", json={"message": "hello",  "session_id": "test-session-1"})
+    response = client.post(
+        "/chat", json={"message": "hello", "session_id": "test-session-1"}
+    )
     assert response.status_code == 200
     data = response.json()
     assert "reply" in data
     assert isinstance(data["reply"], str)
     assert data["reply"] != ""
+
 
 def test_chat_endpoint_error_path():
     """Error path: request body is missing the required 'message' field entirely."""
@@ -30,6 +36,7 @@ def test_chat_endpoint_wrong_type_for_message():
     response = client.post("/chat", json={"message": 12345})
     assert response.status_code == 422
 
+
 @patch("main.async_client.chat.completions.create", new_callable=AsyncMock)
 @patch("main.gemini_provider.generate_answer_gemini", new_callable=AsyncMock)
 def test_chat_endpoint_both_providers_fail(mock_gemini, mock_openai):
@@ -41,11 +48,12 @@ def test_chat_endpoint_both_providers_fail(mock_gemini, mock_openai):
     # deployed server would — converting an unhandled exception into an
     # actual 500 response instead of re-raising it into the test itself
     client_no_raise = TestClient(app, raise_server_exceptions=False)
-    response = client_no_raise.post("/chat", json={"message": "hello", "session_id": "test-session-1"})
+    response = client_no_raise.post(
+        "/chat", json={"message": "hello", "session_id": "test-session-1"}
+    )
 
     assert response.status_code == 500
 
-import requests
 
 def test_langgraphchat_endpoint_happy_path():
     response = client.post(
@@ -55,12 +63,14 @@ def test_langgraphchat_endpoint_happy_path():
     assert response.status_code == 200
     assert "reply" in response.json()
 
+
 def test_langgraphchat_endpoint_missing_message_field():
     response = client.post(
         "/langgraphchat",
         json={"session_id": "test-session-1"},  # missing required "message" field
     )
     assert response.status_code == 422  # FastAPI/Pydantic validation error
+
 
 def test_langgraphchat_endpoint_empty_message_returns_400():
     response = client.post(
@@ -69,3 +79,44 @@ def test_langgraphchat_endpoint_empty_message_returns_400():
     )
     assert response.status_code == 400
     assert "non-empty string" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+@patch("main.graph.ainvoke", new_callable=AsyncMock)
+async def test_langgraphchat_homer_favorite_food(mock_ainvoke):
+    mock_ainvoke.return_value = {
+        "reply": "Based on the provided context, Homer Simpson's favorite food is broccoli casserole.",
+        "history": [],
+        "question": "What is Homer Simpson's favorite food?",
+        "session_id": "test-session-1",
+        "retrieved_chunks": [],
+        "score": 0.9,
+        "retry_count": 0,
+    }
+
+    response = client.post(
+        "/langgraphchat",
+        json={
+            "message": "What is Homer Simpson's favorite food?",
+            "session_id": "test-session-1",
+        },
+    )
+
+    assert response.status_code == 200
+    reply = response.json()["reply"]
+    assert "broccoli casserole" in reply
+
+
+def test_langgraphchat_homer_favorite_food_integration():
+    """Integration test — hits real graph, real LLM, real fabricated-fact grounding check."""
+    response = client.post(
+        "/langgraphchat",
+        json={
+            "message": "What is Homer Simpson's favorite food?",
+            "session_id": "test-session-integration",
+        },
+    )
+
+    assert response.status_code == 200
+    reply = response.json()["reply"]
+    assert "broccoli casserole" in reply
