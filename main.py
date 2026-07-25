@@ -1,8 +1,14 @@
+# Standard library
+# reads environment variables
+import os
+import time
+import logging
+
+# Third-party: FastAPI
 from fastapi import FastAPI, HTTPException, Request
 
 # some route will return HTML, not JSON
 from fastapi.responses import HTMLResponse
-
 from fastapi.templating import Jinja2Templates
 
 # serving files like CSS, JavaScript, and images from a static folder
@@ -11,51 +17,35 @@ from fastapi.staticfiles import StaticFiles
 # define the shape of data coming into and going out of your API
 from pydantic import BaseModel
 
-# only the exact values are allowed
-from typing import Literal
+# Third-party: Langgraph / LangChain
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.checkpoint.memory import MemorySaver
 
-# reads environment variables
-import os
-
-#  client for the OpenAI API
-from openai import OpenAI
-from openai import AsyncOpenAI
-
+# Local modules
 # loads secrets from a .env file
 from dotenv import load_dotenv
+from logging_config import setup_logging
 
 # helps build file paths safely.
 from pathlib import Path
-
-import logging
-from logging_config import setup_logging
+import providers.openai_provider, providers.gemini_provider
+import web_search_provider
+import prompt_rules
+import graph_builder
+import rag_tasks
+import utility.unify_response_content
 
 # setup
 load_dotenv("apiKey.env")
 load_dotenv(".env")
 
-import providers.openai_provider, providers.gemini_provider
 
-import time
-
-from web_search_provider import web_search_fallback
-
-import prompt_rules
-
-import graph_builder
-
-from langgraph.checkpoint.memory import MemorySaver
-
-from langchain_openai import ChatOpenAI
-
-from langchain_core.messages import HumanMessage, AIMessage
-import rag_tasks
-import utility.unify_response_content
-
+# depreacated with /chat
 # OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # OpenAI async client
-async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # set up logs
@@ -77,10 +67,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 #  tells FastAPI where the HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-
+# deprecatd with /chat
 # store chat history, list of dictionaries
-history = []
-session_store: dict[str, list] = {}
+# history = []
+# session_store: dict[str, list] = {}
 
 
 # data models
@@ -93,6 +83,7 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+# use langgraph built in fallbacks methods
 backup_llm = providers.openai_provider.openai_llm.with_fallbacks(
     [providers.gemini_provider.gemini_llm]
 )
@@ -103,7 +94,9 @@ backup_llm = providers.openai_provider.openai_llm.with_fallbacks(
 # when visits /, run this function and return HTML. The request is needed for template rendering
 def home(request: Request):
     #  loads index.html and sends it to the browser
-    return templates.TemplateResponse(request=request, name="index.html", context={})
+    return templates.TemplateResponse(
+        request=request, name="index_langgraph.html", context={}
+    )
 
 
 @app.get("/langgraph", response_class=HTMLResponse)
@@ -113,45 +106,51 @@ async def langgraph(request: Request):
     )
 
 
+# OpenAI first, falls back to Gemini on failure
 async def generate_with_llm_failover(
-    prompt: str, messages_override: list = None
+    prompt: str,
+    messages_override: list = None,  # full list of conversation messages (history + current prompt)
 ) -> str:
-    """
-    Tries OpenAI first, falls back to Gemini on failure.
-    Returns the reply string. Used for both the initial answer attempt
-    and the grounded (post-web-search) re-generation.
-    """
-    messages = messages_override or [HumanMessage(content=prompt)]
+
+    messages = messages_override or [
+        HumanMessage(content=prompt)
+    ]  # wrapping the plain prompt string into a single-message list.
+
+    # messages is either (history+query) or prompt
+
     response = await backup_llm.ainvoke(messages)
+
+    # open ai and gemini returns different response structure
     return utility.unify_response_content.to_text(response.content)
 
 
-async def generate_with_knowledge_failover(
-    question: str, prompt: str, history: list
-) -> str:
-    """
-    Runs the prompt through generate_with_llm_failover, and if the model
-    signals NO_KNOWLEDGE, falls back to web search + a grounded
-    regeneration (also via generate_with_failover, so failover applies
-    to that call too).
-    """
-    messages_to_send = history + [HumanMessage(content=prompt)]
+# deprecated with /chat
+# async def generate_with_knowledge_failover(
+#     question: str, prompt: str, history: list
+# ) -> str:
+#     """
+#     Runs the prompt through generate_with_llm_failover, and if the model
+#     signals NO_KNOWLEDGE, falls back to web search + a grounded
+#     regeneration (also via generate_with_failover, so failover applies
+#     to that call too).
+#     """
+#     messages_to_send = history + [HumanMessage(content=prompt)]
 
-    reply = await generate_with_llm_failover(prompt, messages_to_send)
-    if reply.strip() == "NO_KNOWLEDGE":
-        web_results = await web_search_fallback(question)
+#     reply = await generate_with_llm_failover(prompt, messages_to_send)
+#     if reply.strip() == "NO_KNOWLEDGE":
+#         web_results = await web_search_provider.web_search_fallback(question)
 
-        if not web_results:
-            return "I don't know - no local context, no trained knowledge, and web search returned nothing."
+#         if not web_results:
+#             return "I don't know - no local context, no trained knowledge, and web search returned nothing."
 
-        grounded_prompt = construct_prompt(
-            prompt_rules.NO_CONTEXT_RULE, question, web_results
-        )
+#         grounded_prompt = construct_prompt(
+#             prompt_rules.NO_CONTEXT_RULE, question, web_results
+#         )
 
-        reply = await generate_with_llm_failover(grounded_prompt)
-        reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
+#         reply = await generate_with_llm_failover(grounded_prompt)
+#         reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
 
-    return reply
+#     return reply
 
 
 #fmt: off
@@ -171,7 +170,7 @@ Question: {question}
 """
 
 
-# use retrieval
+# Deprecated
 # @app.post("/chat")
 # async def chat(request: ChatRequest):
 
@@ -227,8 +226,10 @@ def healthAPIEndpoint():
 
 @app.post("/langgraphchat")
 async def langgraphchat(request: ChatRequest):
-    session_id = request.session_id
+    session_id = request.session_id 
+    # this becomes the thread_id for the checkpointer later
 
+    # this is the starting state dict of the graph.
     initial_state = {
         "question": request.message,
         "history": [],
@@ -240,6 +241,7 @@ async def langgraphchat(request: ChatRequest):
     }
 
     start = time.time()
+    # if any node inside the graph raises an error
     try:
         result = await graph.ainvoke(
             initial_state, config={"configurable": {"thread_id": session_id}}
@@ -249,6 +251,7 @@ async def langgraphchat(request: ChatRequest):
 
     elapsed = time.time() - start
     print(f"LangGraph total time: {elapsed:.2f}s")
+
     return {"reply": result["reply"]}
 
 

@@ -134,9 +134,6 @@ async def test_full_graph_routes_to_web_search_on_no_knowledge():
             ("irrelevant chunk", -5.0)
         ],  # low score -> generate_without_context
     ), patch(
-        "main.generate_with_knowledge_failover",
-        return_value="NO_KNOWLEDGE",  # triggers web search
-    ), patch(
         "web_search_provider.web_search_fallback",
         return_value="Some fact found via web search.",
     ), patch(
@@ -205,7 +202,9 @@ async def test_full_graph_end_to_end_without_context():
     graph = StateGraph(graph_builder.ChatState)
     graph.add_node("retrieve_and_rerank", graph_builder.retrieve_and_rerank_node)
     graph.add_node("generate_with_context", graph_builder.generate_with_context_node)
-    graph.add_node("generate_without_context", graph_builder.generate_without_context_node)
+    graph.add_node(
+        "generate_without_context", graph_builder.generate_without_context_node
+    )
     graph.add_node("web_search_node", graph_builder.web_search_node)
 
     graph.set_entry_point("retrieve_and_rerank")

@@ -1,5 +1,7 @@
 # Open ai and gemini response is different
 # format
+# OpenAI — response.content is a plain string
+# Gemini — response.content can be a list of dicts
 def to_text(content) -> str:
     if isinstance(content, str):
         return content
