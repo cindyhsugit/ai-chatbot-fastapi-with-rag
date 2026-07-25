@@ -1,5 +1,5 @@
 import logging
-from scripts.logging_config import setup_logging
+from logging_config import setup_logging
 import pytest
 import rag_tasks
 

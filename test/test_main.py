@@ -1,67 +1,68 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 import main
 import prompt_rules
 import asyncio
+from langchain_core.messages import HumanMessage, AIMessage
 
 
 @pytest.mark.asyncio
-@patch("main.openai_provider.generate_answer_openai", new_callable=AsyncMock)
-async def test_generate_with_llm_failover_happy_path(mock_openai):
+async def test_generate_with_llm_failover_happy_path():
     mock_response = MagicMock()
     mock_response.content = "hello back"
-    mock_openai.return_value = mock_response
 
-    result = await main.generate_with_llm_failover("promptstr")
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+    with patch("main.backup_llm", mock_llm):
+        result = await main.generate_with_llm_failover("promptstr")
 
-    assert isinstance(result, str)
     assert result == "hello back"
-    mock_openai.assert_called_once()
+    mock_llm.ainvoke.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("main.gemini_provider.generate_answer_gemini", new_callable=AsyncMock)
-@patch("main.openai_provider.generate_answer_openai", new_callable=AsyncMock)
-async def test_generate_with_llm_failover_openai_fails_uses_gemini(
-    mock_openai, mock_gemini
-):
-    mock_openai.side_effect = Exception("OpenAI is down")
-    mock_gemini.return_value = "Fallback answer from Gemini."
+async def test_generate_with_llm_failover_openai_fails_uses_gemini():
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke = AsyncMock(side_effect=Exception("all providers down"))
 
-    result = await main.generate_with_llm_failover("promptstr")
-
-    assert result == "Fallback answer from Gemini."
-    mock_gemini.assert_called_once()
+    with patch("main.backup_llm", mock_llm):
+        with pytest.raises(Exception, match="all providers down"):
+            await main.generate_with_llm_failover("promptstr")
 
 
 @pytest.mark.asyncio
-@patch("main.generate_with_llm_failover", new_callable=AsyncMock)
-async def test_generate_with_knowledge_failover_happy_path(mock_generate):
-    mock_generate.return_value = "Homer Simpson's favorite food is broccoli casserole."
-
-    result = await main.generate_with_knowledge_failover(
-        "What is Homer's favorite food?", "promptstr", []
-    )
-
-    assert isinstance(result, str)
-    assert result != ""
-    assert "broccoli casserole" in result
-
-
 @patch("main.web_search_fallback", new_callable=AsyncMock)
 @patch("main.generate_with_llm_failover", new_callable=AsyncMock)
-def test_generate_with_knowledge_failover_error_path_no_web_results(
+async def test_generate_with_knowledge_failover_falls_back_to_web_search(
     mock_generate, mock_web_search
 ):
-    # error path: model says NO_KNOWLEDGE, and the web search fallback
-    # comes back completely empty — does the code fail gracefully
-    # instead of crashing or returning something broken?
-    mock_generate.return_value = "NO_KNOWLEDGE"
-    mock_web_search.return_value = ""  # no web results found
+    # First call returns NO_KNOWLEDGE, second call (post-web-search) returns the real answer
+    mock_generate.side_effect = [
+        "NO_KNOWLEDGE",
+        "Bart Simpson is Homer's son, according to web search.",
+    ]
+    mock_web_search.return_value = "some web search results"
 
-    result = asyncio.run(
-        main.generate_with_knowledge_failover("some obscure question", "promptstr", [])
+    result = await main.generate_with_knowledge_failover(
+        "who is his son", "promptstr", []
+    )
+
+    assert "web search" in result.lower()
+    assert "(Note: answer sourced from live web search" in result
+
+
+@pytest.mark.asyncio
+@patch("main.web_search_fallback", new_callable=AsyncMock)
+@patch("main.generate_with_llm_failover", new_callable=AsyncMock)
+async def test_generate_with_knowledge_failover_error_path_no_web_results(
+    mock_generate, mock_web_search
+):
+    mock_generate.return_value = "NO_KNOWLEDGE"
+    mock_web_search.return_value = ""
+
+    result = await main.generate_with_knowledge_failover(
+        "some obscure question", "promptstr", []
     )
 
     assert isinstance(result, str)

@@ -40,7 +40,7 @@ import time
 
 from web_search_provider import web_search_fallback
 
-from prompt_rules import CONTEXT_ONLY_RULE, CONTEXT_TRAINED_DATA_ONLY_RULE
+import prompt_rules
 
 import graph_builder
 
@@ -48,8 +48,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from langchain_openai import ChatOpenAI
 
-from langchain_core.prompts import ChatPromptTemplate
-
+from langchain_core.messages import HumanMessage, AIMessage
 import rag_tasks
 import utility.unify_response_content
 
@@ -145,7 +144,9 @@ async def generate_with_knowledge_failover(
         if not web_results:
             return "I don't know - no local context, no trained knowledge, and web search returned nothing."
 
-        grounded_prompt = construct_prompt(CONTEXT_ONLY_RULE, question, web_results)
+        grounded_prompt = construct_prompt(
+            prompt_rules.NO_CONTEXT_RULE, question, web_results
+        )
 
         reply = await generate_with_llm_failover(grounded_prompt)
         reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
@@ -171,51 +172,51 @@ Question: {question}
 
 
 # use retrieval
-@app.post("/chat")
-async def chat(request: ChatRequest):
+# @app.post("/chat")
+# async def chat(request: ChatRequest):
 
-    session_id = request.session_id  # frontend generates/sends a UUID per browser tab
-    history = session_store.get(session_id, [])
+#     session_id = request.session_id  # frontend generates/sends a UUID per browser tab
+#     history = session_store.get(session_id, [])
 
-    # grab the pages most related to what the user asked
-    # relevant_chunks : list[str]
-    start = time.time()
-    relevant_chunks = rag_tasks.retrieve(request.message)
-    end = time.time()
-    print(f"Retrieval Process Till Augmentation Time taken: {end - start:.2f} seconds")
+#     # grab the pages most related to what the user asked
+#     # relevant_chunks : list[str]
+#     start = time.time()
+#     relevant_chunks = rag_tasks.retrieve(request.message)
+#     end = time.time()
+#     print(f"Retrieval Process Till Augmentation Time taken: {end - start:.2f} seconds")
 
-    # staples them all into one single block of text,
-    # with a blank line between each card (\n\n means "new line, new line)
-    context = (
-        "\n\n".join(text for text, score in relevant_chunks) if relevant_chunks else ""
-    )
+#     # staples them all into one single block of text,
+#     # with a blank line between each card (\n\n means "new line, new line)
+#     context = (
+#         "\n\n".join(text for text, score in relevant_chunks) if relevant_chunks else ""
+#     )
 
-    augmented_message = construct_prompt(
-        CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context
-    )
+#     augmented_message = construct_prompt(
+#         prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE, request.message, context
+#     )
 
-    print(f"Prompt length: {len(augmented_message)} characters")
+#     print(f"Prompt length: {len(augmented_message)} characters")
 
-    # debugging purpose
-    # print(json.dumps(messages_to_send, indent=2))
+#     # debugging purpose
+#     # print(json.dumps(messages_to_send, indent=2))
 
-    # response = await async_client.chat.completions.create(
-    #     model="gpt-4o-mini",
-    #     messages=messages_to_send
-    # )
-    # reply = response.choices[0].message.content
+#     # response = await async_client.chat.completions.create(
+#     #     model="gpt-4o-mini",
+#     #     messages=messages_to_send
+#     # )
+#     # reply = response.choices[0].message.content
 
-    total_start = time.time()
-    reply = await generate_with_knowledge_failover(
-        request.message, augmented_message, history
-    )
-    total_elapsed = time.time() - total_start
-    print(f"Total answer_with_coverage_check time: {total_elapsed:.2f} seconds")
-    # Save the CLEAN question (not the augmented version) and the reply
-    history.append({"role": "user", "content": request.message})
-    history.append({"role": "assistant", "content": reply})
+#     total_start = time.time()
+#     reply = await generate_with_knowledge_failover(
+#         request.message, augmented_message, history
+#     )
+#     total_elapsed = time.time() - total_start
+#     print(f"Total answer_with_coverage_check time: {total_elapsed:.2f} seconds")
+#     # Save the CLEAN question (not the augmented version) and the reply
+#     history.append({"role": "user", "content": request.message})
+#     history.append({"role": "assistant", "content": reply})
 
-    return {"reply": reply}
+#     return {"reply": reply}
 
 
 # a tiny check route. If it returns {"status": "ok"}, the server is alive.

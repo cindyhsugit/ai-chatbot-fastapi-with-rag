@@ -10,5 +10,7 @@ def to_text(content) -> str:
                 parts.append(block["text"])
             elif isinstance(block, str):
                 parts.append(block)
+            else:
+                parts.append(str(block))
         return " ".join(parts)
     return str(content)
