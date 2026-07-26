@@ -6,8 +6,8 @@
 
 ![RAG workflow demo](screenshots/combined_demo_annotated.png)
 
-See the [high-level architecture](diagram_hierarchy.md) and
-[detailed structure](diagram_detail.md) for more.
+See the [high-level architecture](screenshots/diagram_hierarchy.md) and
+[detailed structure](screenshots/diagram_detail.md) for more.
 
 # AI Chatbot with RAG — LangGraph Edition
 
