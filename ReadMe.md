@@ -71,14 +71,32 @@ LangGraph to get:
   custom message-format converters for OpenAI and Gemini
 
 ## Notable debugging story
+**Dual history tracking.** Early in the migration, conversation history was
+tracked in two places at once: a hand-rolled `session_store` dict, and
+LangGraph's `MemorySaver` checkpointer (via the `add_messages` reducer). Both
+were being fed into the graph on every turn — a redundancy that risked
+silently duplicating messages as conversations grew. Caught this during
+architecture review and removed `session_store` entirely, making the
+checkpointer the single source of truth for history.
 
-During this migration, a multi-turn conversation intermittently lost context
-on follow-up questions (e.g., "who is his son" failing to resolve to a prior
-"Homer Simpson" reference). Systematic elimination ruled out checkpointer
-misconfiguration, `thread_id` mismatches, and prompt-template issues — the
-root cause turned out to be LLM sampling variance (`temperature=1` by default)
-at a borderline decision point in the `NO_KNOWLEDGE` gate. Fixed by setting
-`temperature=0` on the generation model.
+**Cross-provider response shape mismatch.** After migrating to LangChain's
+`ChatOpenAI` / `ChatGoogleGenerativeAI` wrappers with `with_fallbacks()`, a
+Gemini fallback response rendered as `[object Object]` in the UI. Traced this
+to a shape mismatch: OpenAI's `response.content` is always a plain string,
+while Gemini's can be a list of content blocks (`[{"type": "text", "text":
+"...", "extras": {...}}]`) carrying internal metadata. Wrote a small
+normalization utility (`unify_response_content.to_text`) so downstream code
+never needs to know which provider actually answered.
+
+**Intermittent `NO_KNOWLEDGE` flip-flopping.** A multi-turn conversation
+intermittently lost context on follow-up questions (e.g., "who is his son"
+failing to resolve to a prior "Homer Simpson" reference). Systematic
+elimination ruled out checkpointer misconfiguration, `thread_id` mismatches,
+and prompt-template issues — the root cause turned out to be LLM sampling
+variance (`temperature=1` by default) at a borderline decision point in the
+knowledge-gate prompt. Confirmed via five repeated runs on identical input
+(4/5 answered correctly, 1/5 hedged), then fixed by setting `temperature=0`
+on the generation model.
 
 ## Tech stack
 
