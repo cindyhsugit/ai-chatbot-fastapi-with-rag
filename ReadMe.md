@@ -1,10 +1,13 @@
+## Architecture Diagram
 
-![RAG work flow in production](screenshots/combined_demo_annotated.png)
+![LangGraph flow](screenshots/graph_diagram.png)
 
-![Langgraph flow in production](screenshots/graph_diagram.png)
+## Demo Trace
 
-See the [high level architecture](diagram_hierarchy.md) for more.
-See the [detail structure](diagram_detail.md) for more.
+![RAG workflow demo](screenshots/combined_demo_annotated.png)
+
+See the [high-level architecture](diagram_hierarchy.md) and
+[detailed structure](diagram_detail.md) for more.
 
 # AI Chatbot with RAG — LangGraph Edition
 
