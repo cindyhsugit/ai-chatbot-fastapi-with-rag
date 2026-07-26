@@ -1,6 +1,6 @@
 ## Architecture Diagram
 
-![LangGraph flow](screenshots/graph_diagram.png)
+![LangGraph flow](screenshots/graph_diagram_v2.png)
 
 ## Demo Trace
 
