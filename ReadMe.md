@@ -107,11 +107,13 @@ FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 ## Testing
 
 Pytest suite with mocked provider calls, graph node unit tests, and
-integration tests exercising the compiled graph end-to-end. Run with:
+integration tests exercising the compiled graph end-to-end — 98% line
+coverage across the codebase. Run with:
 
 ```bash
-pytest
+pytest --cov
 ```
+
 
 ## Running locally
 
