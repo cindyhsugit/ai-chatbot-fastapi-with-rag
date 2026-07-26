@@ -1,5 +1,5 @@
 
-![RAG work flow in production](rag_workflow_annotated.png)
+![RAG work flow in production](combined_demo_annotated.png)
 
 ![Langgraph flow in production](screenshots/graph_diagram.png)
 
