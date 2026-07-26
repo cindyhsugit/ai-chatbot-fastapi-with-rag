@@ -1,147 +1,114 @@
 
 ![RAG work flow in production](rag_workflow_annotated.png)
 
+![Langgraph flow in production](screenshots/graph_diagram.png)
+
 See the [high level architecture](diagram_hierarchy.md) for more.
 See the [detail structure](diagram_detail.md) for more.
 
+# AI Chatbot with RAG — LangGraph Edition
 
-## Branches
-- `main` — current branch. Corrective RAG (CRAG) pipeline:
-  - HuggingFace open-source embeddings (`all-MiniLM-L6-v2`), no paid embedding API dependency.
-  - Two-stage retrieval: **ChromaDB** search (top-20 candidates), then a HuggingFace cross-encoder (`ms-marco-MiniLM-L-6-v2`) reranks down to the top-3.
-  - **Two-tier failover, decoupled from each other:**
-    1. *Network failover* (`generate_with_llm_failover`): tries OpenAI first, falls back to Gemini on any exception (rate limit, timeout, outage).
-    2. *Knowledge failover* (`generate_with_knowledge_failover`): if the model responds with the sentinel `NO_KNOWLEDGE` (meaning local context AND the model's own trained knowledge both came up empty), falls back to a live Tavily web search, then re-generates a grounded answer from those results — routed through the same network-failover call, so a provider outage during the correction step is still covered.
-  - Prompt rules extracted into `prompt_rules.py` (`CONTEXT_ONLY_RULE`, `CONTEXT_TRAINED_DATA_ONLY_RULE`) so `main.py` isn't cluttered with long prompt strings, and the rules are independently testable/tunable.
-  - Answers sourced from the web-search fallback are labeled in the reply (`"(Note: answer sourced from live web search, not local knowledge base.)"`) so it's clear when the pipeline had to leave the local knowledge base.
-  - **Per-session conversation history**: history is scoped by `session_id` (sent by the frontend on every request, stored server-side in `session_store`) rather than a single process-wide list — see "Resolved bugs" below for why this matters.
+A retrieval-augmented chatbot built from primitives, then migrated to
+[LangGraph](https://github.com/langchain-ai/langgraph) for orchestration,
+conversational memory, and conditional routing between retrieval, trained
+knowledge, and live web search.
 
-## Architecture (main)
+**Live demo:** [Cloud Run deployment](#) <!-- add your Cloud Run URL -->
+
+> Looking for the original, from-scratch implementation (no LangChain/LangGraph)?
+> See [README_v1_manual_rag.md](README_v1_manual_rag.md) — kept live on Render
+> as a before/after comparison.
+
+---
+
+## Architecture
+
+This app implements a three-tier CRAG (Corrective RAG) pipeline as a LangGraph
+`StateGraph`:
+
 ```
-question + session_id
-  → look up (or create) session's conversation history
-  → embed (HuggingFace all-MiniLM-L6-v2)
-  → ChromaDB search (top-20)
-  → cross-encoder rerank (top-3)
-  → construct_prompt(CONTEXT_TRAINED_DATA_ONLY_RULE, ...)
-  → generate_with_knowledge_failover(question, prompt, history)
-        → generate_with_llm_failover (OpenAI → Gemini on failure)
-        → if reply == "NO_KNOWLEDGE":
-              → Tavily web search
-              → construct_prompt(CONTEXT_ONLY_RULE, ...) on web results
-              → generate_with_llm_failover again (OpenAI → Gemini on failure)
-  → append (question, reply) to this session's history
-  → reply
-```
-
-## Running it
-Three ways to query the pipeline:
-1. In Python: `rag_tasks.retrieve("your question")`, then `python main.py`
-2. FastAPI's built-in `/docs` endpoint — manually construct a request in the interactive UI
-3. curl:
-```bash
-   curl -X POST http://127.0.0.1:8000/chat \
-     -H "Content-Type: application/json" \
-     -d '{"message": "your question", "session_id": "test-session"}'
+question
+   │
+   ▼
+retrieve_and_rerank_node  (ChromaDB + cross-encoder reranker)
+   │
+   ├─ score ≥ threshold ──► generate_with_context_node ──► reply
+   │
+   └─ score < threshold ──► generate_without_context_node
+                                  │
+                                  ├─ confident answer ──► reply
+                                  │
+                                  └─ NO_KNOWLEDGE ──► web_search_node ──► reply
 ```
 
-### Environment variables required
-| Variable | Used by |
-|---|---|
-| `OPENAI_API_KEY` | `main.py`, primary generation |
-| `GEMINI_API_KEY` | `gemini_provider.py`, failover generation |
-| `TAVILY_API_KEY` | `web_search_provider.py`, CRAG web-search fallback |
-| `INPUT_FILE` | `rag_tasks.py`, source document to chunk/embed at ingest time |
+- **Retrieval:** HuggingFace embeddings (`all-MiniLM-L6-v2`) + ChromaDB vector store
+- **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows top-20 retrieved
+  chunks down to the top 3 most relevant
+- **Generation:** Two-tier LLM failover — OpenAI primary, Gemini fallback, via
+  LangChain's `with_fallbacks()`
+- **Fallback:** Tavily web search when neither local context nor trained
+  knowledge can answer the question
+- **Memory:** LangGraph's `MemorySaver` checkpointer + `add_messages` reducer
+  give the graph multi-turn conversational memory, keyed by `session_id`
 
-## Resolved bugs
+## Why LangGraph
 
-- **Shared global conversation history caused cross-talk between concurrent requests.**
-  `history` was originally a module-level list, read at the top of the `/chat` handler
-  and appended to at the bottom. Because the handler is `async` and awaits an LLM call
-  in between, two concurrent requests could interleave: request B could read the shared
-  `history` before request A (which arrived first but is still awaiting its LLM response)
-  had appended its turn — resulting in replies rendered against the wrong question,
-  or turns appended out of order. Root cause: mutable state shared across an `await`
-  boundary, not the use of `async` itself. Fixed by moving `history` into a `session_store`
-  dict keyed by a per-browser-tab `session_id` (frontend-generated UUID, sent on every
-  request), so each conversation has its own isolated list with nothing to race on.
-  Added a regression test asserting that prior turns are correctly threaded into the
-  message payload sent to the LLM.
+The original version (see `README_v1_manual_rag.md`) was built entirely from
+primitives — no LangChain — specifically to understand RAG internals deeply
+before reaching for a framework. This version migrates orchestration to
+LangGraph to get:
 
-## Timing breakdown (sample run, feature/reranker-huggingface-gemini)
-| Stage | Time |
-|---|---|
-| Chunking | 0.00s |
-| HuggingFace embedding | 0.12s |
-| FAISS search | 0.00s |
-| Cross-encoder rerank | 1.04s |
-| Gemini generation | 9.30s |
+- **Explicit state management** — a typed `ChatState` schema instead of
+  threading dicts through function calls by hand
+- **Conditional routing** — graph edges replace nested if/else fallback logic
+- **Built-in conversational memory** — `MemorySaver` + `add_messages` replaced
+  a hand-rolled `session_store` dict, removing a redundant/competing source of
+  truth for conversation history
+- **Provider abstraction** — `ChatOpenAI` / `ChatGoogleGenerativeAI` replaced
+  custom message-format converters for OpenAI and Gemini
 
-Retrieval (embedding → FAISS search → rerank) totals ~1.05s; generation dominates total latency at ~9x the retrieval cost. Within retrieval, cross-encoder reranking — not the vector search step — is the bottleneck, since it requires a full forward pass per candidate rather than a precomputed vector lookup.
+## Notable debugging story
 
-*(Timing breakdown for the current ChromaDB + CRAG path not yet re-benchmarked — swap the FAISS row for ChromaDB search, and add a row for the Tavily fallback path when the NO_KNOWLEDGE branch fires.)*
+During this migration, a multi-turn conversation intermittently lost context
+on follow-up questions (e.g., "who is his son" failing to resolve to a prior
+"Homer Simpson" reference). Systematic elimination ruled out checkpointer
+misconfiguration, `thread_id` mismatches, and prompt-template issues — the
+root cause turned out to be LLM sampling variance (`temperature=1` by default)
+at a borderline decision point in the `NO_KNOWLEDGE` gate. Fixed by setting
+`temperature=0` on the generation model.
+
+## Tech stack
+
+FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
+`langchain-google-genai`) · ChromaDB · HuggingFace embeddings & cross-encoder
+· OpenAI API · Gemini API · Tavily · Docker · Google Cloud Run
 
 ## Testing
-![test coverage](main_coverage.png)
-Full pytest suite under `test/` — **39 tests, 99% statement coverage**, one file per module:
-- `test_chunking.py`, `test_retrieval.py`, `test_reranker.py`, `test_embedding.py`, `test_chromadb.py` — core RAG pipeline pieces
-- `test_main.py` — `construct_prompt`, `generate_with_llm_failover`, `generate_with_knowledge_failover`
-- `test_api.py` — `/chat` and `/health` endpoints, including provider-failure and validation error paths
-- `test_gemini_provider.py`, `test_web_search_provider.py` — failover and CRAG web-search fallback providers
-- `test_utils.py` — shared helpers
 
-Each function is tested for happy path, error path (a real failure — bad input, a dependency throwing), and edge case (valid but boundary input — empty strings, whitespace, etc.) where all three are meaningfully different from each other.
+Pytest suite with mocked provider calls, graph node unit tests, and
+integration tests exercising the compiled graph end-to-end. Run with:
 
-All external calls (OpenAI, Gemini, Tavily, ChromaDB) are mocked — the suite runs with no live API calls and no network dependency.
+```bash
+pytest
+```
 
+## Running locally
 
-**Coverage by module:**
-| Module | Statements | Missed | Coverage |
-|---|---|---|---|
-| `embeddings_hf.py` | 6 | 0 | 100% |
-| `gemini_provider.py` | 18 | 0 | 100% |
-| `logging_config.py` | 10 | 0 | 100% |
-| `main.py` | 91 | 4 | 96% |
-| `prompt_rules.py` | 2 | 0 | 100% |
-| `rag_tasks.py` | 56 | 1 | 98% |
-| `reranker_hf.py` | 11 | 0 | 100% |
-| `vectorstore_chroma.py` | 9 | 0 | 100% |
-| `web_search_provider.py` | 19 | 1 | 95% |
-| **Total** | **453** | **6** | **99%** |
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
 
-## Deployment
-Deployed via Docker to both **Render** and **Google Cloud Run**.
-https://ai-chatbot-fastapi-3b8w.onrender.com
-https://ai-chatbot-with-rag-1016078012439.us-west1.run.app/
+Requires `OPENAI_API_KEY` and `GEMINI_API_KEY` set as environment variables
+(or in an `.env` / `apiKey.env` file).
 
-Known deployment gotchas worth documenting (all resolved):
-- **Cloud Run + memory:** the ML stack (sentence-transformers, cross-encoder, FAISS, ChromaDB) needs real headroom — 512Mi caused a silent out-of-memory kill on container startup with no traceback in the logs. Bumped to 2Gi.
-- **Cloud Run + HTTPS scheme:** Cloud Run terminates TLS at its proxy, so the container only ever sees plain `http` internally. FastAPI's `url_for()` generated `http://` links for static assets, which browsers block as mixed content on an otherwise-`https://` page. Fixed by adding `--proxy-headers --forwarded-allow-ips='*'` to the uvicorn CMD, so it trusts Cloud Run's `X-Forwarded-Proto` header instead of guessing.
-- **Windows PowerShell + git branch typos:** watch for truncated branch names in push commands (`feature/chromadb` vs `feature/chromadb-migration`).
+## Repo structure
 
-## Known limitations / planned improvements
-
-- **Context suppresses trained-knowledge fallback.** Even when retrieval returns
-  low-relevance chunks, injecting *any* context into the prompt causes the model
-  to default to `NO_KNOWLEDGE` and fall back to web search — even for questions
-  it could answer confidently from pretraining (e.g. "capital of France").
-  Confirmed via controlled test: same question with empty context answers
-  correctly from trained knowledge; with irrelevant context injected, it
-  defers to web search.
-  **Planned fix:** the reranker (`ms-marco-MiniLM-L-6-v2`) already computes a
-  relevance score per chunk, but the current pipeline discards it and always
-  passes the top-k chunks through. Returning the score and filtering on a
-  threshold would let genuinely out-of-scope questions skip context injection
-  entirely.
-
-- **No response caching.** Identical questions currently re-run the full
-  retrieval → rerank → LLM pipeline every time. Adding an in-memory cache
-  (keyed on normalized question text) would avoid redundant calls — with the
-  caveat that time-sensitive, web-sourced answers should be excluded from
-  caching or given a short TTL.
-
-
-
-
-
-
+```
+main.py                 # FastAPI app, /langgraphchat endpoint
+graph_builder.py         # LangGraph StateGraph, nodes, conditional edges
+providers/                # OpenAI / Gemini LLM wrappers
+utility/                   # Cross-provider response normalization
+scripts/                   # Standalone debugging/calibration scripts
+test/                      # Pytest suite
+```
