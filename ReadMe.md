@@ -16,7 +16,7 @@ A retrieval-augmented chatbot built from primitives, then migrated to
 conversational memory, and conditional routing between retrieval, trained
 knowledge, and live web search.
 
-**Live demo:** [Cloud Run deployment](#) [<!-- add your Cloud Run URL -->](https://ai-chatbot-with-rag-1016078012439.us-west1.run.app)
+**Live demo:** [Cloud Run deployment](#) (https://ai-chatbot-with-rag-1016078012439.us-west1.run.app)
 
 > Looking for the original, from-scratch implementation (no LangChain/LangGraph)?
 > See [README_v1_manual_rag.md](README_v1_manual_rag.md) — kept live on Render
