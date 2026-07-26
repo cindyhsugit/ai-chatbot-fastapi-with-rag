@@ -1,14 +1,11 @@
 # Standard library
-import os
-import operator
-from typing import TypedDict, Annotated, List, Tuple
+from typing import TypedDict, Annotated
 
 # Third-party
 from dotenv import load_dotenv
-from openai import OpenAI, AsyncOpenAI
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
+from langgraph.graph import CompiledStateGraph
 from langgraph.graph.message import add_messages
 
 # Local modules
@@ -26,9 +23,9 @@ RERANK_SCORE_THRESHOLD = 0.0
 
 class ChatState(TypedDict):
     question: str
-    history: Annotated[
-        list, add_messages
-    ]  # add_messages reducer function merges history
+    history: Annotated[  # Annotated is generic Python typing syntax, as a way to attach their own special instructions onto a type hint
+        list, add_messages  # add_messages reducer function merges history
+    ]
     session_id: str
     retrieved_chunks: list
     score: float  # top cross-encoder reranker score from retrieved_chunks
@@ -76,6 +73,7 @@ def retrieve_and_rerank_node(state: ChatState) -> dict:
     }
 
 
+# keep routing logic lives in its own small separate function
 def score_threshold_router(state: ChatState) -> str:
     if state["score"] > 0:
         return "generate_with_context"
@@ -178,7 +176,8 @@ async def web_search_node(state: ChatState) -> dict:
     }
 
 
-def build_graph(checkpointer=None):
+def build_graph(checkpointer=None) -> CompiledStateGraph:
+    # Initialize the Graph
     graph = StateGraph(ChatState)
 
     graph.add_node("retrieve_and_rerank", retrieve_and_rerank_node)
@@ -203,10 +202,15 @@ def build_graph(checkpointer=None):
 
     graph.add_edge("web_search_node", END)
 
+    # Compile the graph into a runnable application
+    # attach a checkpointer (like MemorySaver) to enable
+    # thread persistence, state checkpointing, and
+    # conversation memory.
     return graph.compile(checkpointer=checkpointer)
 
 
 if __name__ == "__main__":
+    # debug-only
     from langgraph.checkpoint.memory import MemorySaver
 
     debug_graph = build_graph(MemorySaver())
