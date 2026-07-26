@@ -92,7 +92,6 @@ async def test_langgraphchat_homer_favorite_food(mock_ainvoke):
         "session_id": "test-session-1",
         "retrieved_chunks": [],
         "score": 0.9,
-        "retry_count": 0,
     }
 
     response = client.post(

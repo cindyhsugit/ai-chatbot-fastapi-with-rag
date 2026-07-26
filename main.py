@@ -237,7 +237,6 @@ async def langgraphchat(request: ChatRequest):
         "retrieved_chunks": [],
         "score": 0.0,
         "reply": "",
-        "retry_count": 0,
     }
 
     start = time.time()

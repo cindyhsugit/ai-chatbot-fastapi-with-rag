@@ -1,38 +1,38 @@
+# Standard library
+import os
+import operator
+from typing import TypedDict, Annotated, List, Tuple
+
+# Third-party
+from dotenv import load_dotenv
+from openai import OpenAI, AsyncOpenAI
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+
+# Local modules
 import rag_tasks
+import prompt_rules
+import web_search_provider
 from reranker_hf import rerank
 
-from typing import TypedDict, Annotated, List, Tuple
-import operator
-import prompt_rules
-from langgraph.graph import StateGraph, END
-import web_search_provider
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-
-from openai import OpenAI
-from openai import AsyncOpenAI
-
-# reads environment variables
-import os
-
-from dotenv import load_dotenv
-
+# Setup
 load_dotenv()
 
+# relevant threshold to be considered to use context
 RERANK_SCORE_THRESHOLD = 0.0
-
-from typing import Annotated
-from langgraph.graph.message import add_messages
-from langchain_openai import ChatOpenAI
 
 
 class ChatState(TypedDict):
     question: str
-    history: Annotated[list, add_messages]
+    history: Annotated[
+        list, add_messages
+    ]  # add_messages reducer function merges history
     session_id: str
     retrieved_chunks: list
-    score: float
+    score: float  # top cross-encoder reranker score from retrieved_chunks
     reply: str
-    retry_count: int
 
 
 # open AI expect "role" of "user" or "assistant" in message
@@ -90,6 +90,7 @@ def not_in_context_router(state: ChatState) -> str:
         return "END"
 
 
+# 2nd node after retrieval node
 async def generate_with_context_node(state: ChatState) -> dict:
     question = state["question"]
     chunks = state["retrieved_chunks"]  # list of (text, score) tuples
@@ -98,16 +99,20 @@ async def generate_with_context_node(state: ChatState) -> dict:
 
     from main import construct_prompt
 
+    # fmt:off
     prompt = construct_prompt(
-        rules=prompt_rules.CONTEXT_ONLY_RULE, context=context_text, question=question
+        rules=prompt_rules.CONTEXT_ONLY_RULE, 
+        context=context_text, 
+        question=question
     )
-
+    # fmt:on
     messages = history + [HumanMessage(content=prompt)]
 
     from main import generate_with_llm_failover
 
     reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
 
+    # return only the fields they actually changed
     return {
         "reply": reply,
         "history": [
@@ -117,22 +122,24 @@ async def generate_with_context_node(state: ChatState) -> dict:
     }
 
 
+# 3rd node after retrieval node
 async def generate_without_context_node(state: ChatState) -> dict:
     question = state["question"]
-
     history = state["history"]
+
     from main import construct_prompt
 
+    #fmt:off
     prompt = construct_prompt(
-        rules=prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE, context="", question=question
+        rules=prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE, 
+        context="", 
+        question=question
     )
-
+    #fmt:on
     messages = history + [HumanMessage(content=prompt)]
     from main import generate_with_llm_failover
 
     reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
-    print(f"generate_without_context_node: {reply} *****")
-
     return {
         "reply": reply,
         "history": [
@@ -142,6 +149,7 @@ async def generate_without_context_node(state: ChatState) -> dict:
     }
 
 
+# 4th node after generation node
 async def web_search_node(state: ChatState) -> dict:
     question = state["question"]
     web_results = await web_search_provider.web_search_fallback(question)
@@ -160,7 +168,7 @@ async def web_search_node(state: ChatState) -> dict:
 
     reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
     reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
-
+    # add a footnote here to indicate from web
     return {
         "reply": reply,
         "history": [

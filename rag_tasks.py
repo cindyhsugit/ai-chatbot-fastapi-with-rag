@@ -1,23 +1,26 @@
-from dotenv import load_dotenv
-load_dotenv() 
-load_dotenv("apiKey.env")
-
+# Standard library
 import os
+import time
 from pathlib import Path
-from openai import OpenAI
-from openai import AsyncOpenAI
+
+# Third-party
+from dotenv import load_dotenv
+from openai import OpenAI, AsyncOpenAI
 import faiss
 import numpy as np
-import embeddings_hf
-import reranker_hf
-import time
-import vectorstore_chroma
-
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+# Local modules
+import embeddings_hf
+import reranker_hf
+import vectorstore_chroma
+
+# Setup
+load_dotenv()
+load_dotenv("apiKey.env")
 
 
-# Chunk text
+# Chunk text replaced by langchain textsplitter
 # chunk_text(text: str, chunk_size: int = 500) -> List[str]:
 # def chunk_text(text, chunk_size=500):
 #     words = text.split()
@@ -49,9 +52,9 @@ def get_embedding(text):
 
     if not isinstance(text, str) or not text.strip():
         raise ValueError("text must be a non-empty string")
-    
+
     return_list = embeddings_hf.embed_texts([text])[0].tolist()
-    
+
     return return_list
 
 
@@ -122,7 +125,6 @@ def retrieve(question, k=20):
     return reranked_chunks
 
 
-
 # Returns the file's text content, or exits cleanly with a clear message if anything goes wrong
 def safely_open_input_file() -> str:
     filename = os.environ.get("INPUT_FILE")
@@ -142,7 +144,8 @@ def safely_open_input_file() -> str:
         raise SystemExit(f"Could not decode {filename} as UTF-8: {e}")
     except PermissionError:
         raise SystemExit(f"Permission denied reading file: {filename}")
-    
+
+
 if __name__ == "__main__":
     print(
         "This file builds a search index when imported — run main.py instead of this file directly."
@@ -160,10 +163,10 @@ else:
     # Generate embeddings for each chunk
     # chunks: List[str] = chunk_text(text)
     # example: ["apple", "banana"]
-    #chunks = chunk_text(text)
+    # chunks = chunk_text(text)
     chunks = text_splitter.split_text(loaded_text)
     end = time.time()
-    # print(f"chunk_text Time: {end-start:.2f}s")
+    print(f"chunk text Time: {end-start:.2f}s")
 
     # Turn each chunk into an embedding (a list of numbers representing
     # its meaning)
@@ -185,7 +188,7 @@ else:
     end = time.time()
 
     print(f"Embedding dimension: {len(embeddings[0])}")  # should print 384
-    
+
     print(f"hugging face embedding Time: {end-start:.2f}s")
     # list comprehension version
     # embeddings = [get_embedding(chunk) for chunk in chunks]
@@ -213,7 +216,7 @@ else:
     #   array([[0.0123, -0.0456, 0.0788, ...],
     #          [0.0341,  0.0021, -0.0999, ...]])
     # (FAISS requires float32 specifically)
-    #index.add(np.array(embeddings).astype("float32"))
+    # index.add(np.array(embeddings).astype("float32"))
 
     chunk_ids = []
     for i in range(len(chunks)):
@@ -226,7 +229,7 @@ else:
         embeddings=embeddings,  # this is your HuggingFace embeddings list
         documents=chunks,  # this is your list of chunk text strings
     )
-    print("Using ChromaDB:",  vectorstore_chroma.__name__)
-    
-    #print("FAISS:", index.ntotal)
+    print("Using ChromaDB:", vectorstore_chroma.__name__)
+
+    # print("FAISS:", index.ntotal)
     print("ChromaDB Collection Count:", vectorstore_chroma.collection.count())
