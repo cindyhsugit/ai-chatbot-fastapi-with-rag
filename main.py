@@ -243,7 +243,22 @@ async def langgraphchat(request: ChatRequest):
     # if any node inside the graph raises an error
     try:
         result = await graph.ainvoke(
-            initial_state, config={"configurable": {"thread_id": session_id}}
+            initial_state, 
+            #
+            # config = {
+            #     "configurable": {
+            #         "thread_id": session_id,      # used by the checkpointer
+            #         "user_id": "abc",             # could be used by your own nodes
+            #         "some_other_setting": "..."    # anything else your graph reads via configurable
+            #     },
+            #     "recursion_limit": 50,             # unrelated to checkpointer entirely
+            #     "callbacks": [...],                # tracing/logging, also unrelated to checkpointer
+            #     "tags": ["prod"],
+            # }
+            #
+            config={
+                "configurable": {"thread_id": session_id}
+                    }
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

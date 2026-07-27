@@ -13,6 +13,20 @@ def test_health_endpoint():
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
+# Covers line 97: the home route's TemplateResponse return. Existing API tests
+# hit /health and /langgraphchat but never GET /, so home() was never invoked.
+def test_home_endpoint_returns_html():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Chat App" in response.text
+# Covers line 104: the /langgraph route's TemplateResponse return. Same template
+# as /, but this is a separate async handler — no existing test requested it.
+def test_langgraph_page_endpoint_returns_html():
+    response = client.get("/langgraph")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Chat App" in response.text
 
 # # using TestClient
 # def test_chat_endpoint_happy_path():

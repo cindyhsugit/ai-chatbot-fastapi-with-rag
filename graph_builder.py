@@ -5,7 +5,7 @@ from typing import TypedDict, Annotated
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
-from langgraph.graph import CompiledStateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph.message import add_messages
 
 # Local modules

@@ -39,6 +39,29 @@ def test_web_search_fallback_error_path_tavily_throws(mock_tavily):
 
     assert result == ""
 
+# Covers line 48: the happy-path and empty-content tests always supply at least
+# one entry in "results", and the exception test never reaches line 46. This
+# test mocks Tavily returning a successful response with no usable results
+# (empty list or missing key), so web_search_fallback returns "" early.
+@pytest.mark.parametrize(
+    "tavily_response",
+    [
+        {"results": []},
+        {},
+    ],
+)
+@patch("web_search_provider.tavily_client")
+def test_web_search_fallback_empty_results_returns_empty_string(
+    mock_tavily, tavily_response
+):
+    mock_tavily.search.return_value = tavily_response
+
+    result = asyncio.run(
+        web_search_provider.web_search_fallback("any question")
+    )
+
+    assert result == ""
+
 
 @patch("web_search_provider.tavily_client")
 def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
@@ -57,7 +80,6 @@ def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
     assert "Real Result" in result
     assert "Actual useful content." in result
     assert "Some Page" not in result  # blank-content result correctly filtered out
-
 
 @pytest.mark.asyncio
 async def test_web_search_node_uses_web_search_rule():

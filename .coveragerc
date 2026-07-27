@@ -4,3 +4,6 @@ omit =
     selenium_testing.py
     track_gemini_speed.py
     time_test_reranker_warmup.py
+[report]
+exclude_lines =
+    if __name__ == .__main__.:
