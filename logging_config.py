@@ -1,6 +1,7 @@
 import logging
 import sys
 
+
 def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -10,6 +11,5 @@ def setup_logging():
 
     logger.handlers.clear()
     logger.addHandler(handler)
-    logger.warning("log something important here...")
-    
+
     # add customized logging here if needed

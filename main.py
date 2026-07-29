@@ -40,6 +40,7 @@ import utility.unify_response_content
 load_dotenv("apiKey.env")
 load_dotenv(".env")
 
+import os
 
 # depreacated with /chat
 # OpenAI client
