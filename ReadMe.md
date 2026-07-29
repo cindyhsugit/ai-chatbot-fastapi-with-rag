@@ -125,6 +125,11 @@ FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 (AI-assisted development)
 
 ## Testing
+This project uses LangSmith to trace every graph run. Each turn's 
+inputs/outputs and message history are inspected via the Turns view, 
+making it easy to debug multi-step agent behavior.
+![LangSmith Observability]screenshots/annotated_langsmith.jpg)
+
 
 Pytest suite with mocked provider calls, graph node unit tests, and
 integration tests exercising the compiled graph end-to-end — **100% line
