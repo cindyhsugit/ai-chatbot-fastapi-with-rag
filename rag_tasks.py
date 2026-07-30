@@ -94,26 +94,12 @@ def retrieve(question, k=20):
     end = time.time()
     print(f"-- Chroma DB search Time: {end-start:.2f}s")
 
-    # indices[0] = [5, 12, 3, 8, 19, 0, 45, ...]  # 20 numbers total
-    # chunks[0] -> "apple"
-    # chunks[1] -> "banana"
-    # For each number i inside indices[0], go grab chunks[i]
-    # result -> ["apple", "banana", <IndexError risk on -1!>]
+    return retrieved_chunks
 
-    # result = []
-    #  the first and only row, just 1 question now...
-    # for i in indices[0]:
-    #    matching_chunk = chunks[i]
-    #    result.append(matching_chunk)
 
-    # list comprehension style
-    # result = [chunks[i] for i in indices[0]]
-
-    # question -> "what's homer's favorite food" (str)
-    # result -> ["chunk about donuts...", "chunk about broccoli...", ... ] (list[str], 20 items)
-
-    # top_k=3 -> how many we want back after reranking
-    # reranked_chunks -> ["chunk about broccoli...", "chunk about donuts...", "chunk about..."] (list[str], 3 items, reordered by relevance)
+def rerank(
+    question: str, retrieved_chunks: list[str], top_k: int = 3
+) -> list[tuple[str, float]]:
     start = time.time()
     reranked_chunks = reranker_hf.rerank(
         question, retrieved_chunks, top_k=3

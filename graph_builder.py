@@ -28,6 +28,7 @@ class ChatState(TypedDict):
     ]
     session_id: str
     retrieved_chunks: list
+    reranked_chunks: list
     score: float  # top cross-encoder reranker score from retrieved_chunks
     reply: str
 
@@ -49,26 +50,24 @@ class ChatState(TypedDict):
 # ]
 
 
-def retrieve_and_rerank_node(state: ChatState) -> dict:
-    """
-    Combined retrieve + rerank node.
-    Pulls top-20 candidates from ChromaDB, reranks down to top-3,
-    and keeps the reranker's scores so the next node (score threshold)
-    can decide whether to use this context at all.
-    """
+def retrieve_node(state: ChatState) -> dict:
+
     question = state["question"]
+    retrieved_chunks = rag_tasks.retrieve(question)
 
-    # existing retrieval call, untouched
+    return {"retrieved_chunks": retrieved_chunks}
 
-    # existing rerank call — assumes you've already applied the fix
-    # to return (text, score) tuples instead of text-only
-    reranked = rag_tasks.retrieve(question)
+
+def rerank_node(state: ChatState) -> dict:
+    question = state["question"]
+    retrieved_chunks = state["retrieved_chunks"]
+    reranked = rag_tasks.rerank(question, retrieved_chunks)
 
     # top score drives the threshold decision in the next node
     top_score = reranked[0][1] if reranked else 0.0
 
     return {
-        "retrieved_chunks": reranked,  # list of (text, score) tuples
+        "reranked_chunks": reranked,  # list of (text, score) tuples
         "score": top_score,
     }
 
@@ -91,7 +90,7 @@ def not_in_context_router(state: ChatState) -> str:
 # 2nd node after retrieval node
 async def generate_with_context_node(state: ChatState) -> dict:
     question = state["question"]
-    chunks = state["retrieved_chunks"]  # list of (text, score) tuples
+    chunks = state["reranked_chunks"]  # list of (text, score) tuples
     history = state["history"]
     context_text = "\n\n".join(chunk_text for chunk_text, _ in chunks)
 
@@ -180,14 +179,17 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     # Initialize the Graph
     graph = StateGraph(ChatState)
 
-    graph.add_node("retrieve_and_rerank", retrieve_and_rerank_node)
+    graph.add_node("retrieve_node", retrieve_node)
+
+    graph.add_node("rerank_node", rerank_node)
+    graph.add_edge("retrieve_node", "rerank_node")
     graph.add_node("generate_with_context", generate_with_context_node)
     graph.add_node("generate_without_context", generate_without_context_node)
     graph.add_node("web_search_node", web_search_node)
 
-    graph.set_entry_point("retrieve_and_rerank")
+    graph.set_entry_point("retrieve_node")
     graph.add_conditional_edges(
-        "retrieve_and_rerank",
+        "rerank_node",
         score_threshold_router,
         {
             "generate_with_context": "generate_with_context",

@@ -8,34 +8,58 @@ import main
 from langchain_core.messages import HumanMessage, AIMessage
 
 
-def test_retrieve_and_rerank_node_happy_path():
+def test_retrieve_node_happy_path():
     state = {"question": "What is Homer Simpson's favorite food?"}
-    result = graph_builder.retrieve_and_rerank_node(state)
+    result = graph_builder.retrieve_node(state)
 
     assert "retrieved_chunks" in result
-    assert "score" in result
-    assert result["score"] >= 0.0
 
 
-def test_retrieve_and_rerank_node_unit():
+def test_retrieve_node_unit():
     state = {"question": "What is Homer Simpson's favorite food?"}
-    fake_reranked = [("chunk B", 0.91), ("chunk A", 0.72), ("chunk C", 0.55)]
+    fake_chunks = [("chunk B", 0.91), ("chunk A", 0.72), ("chunk C", 0.55)]
 
-    with patch("graph_builder.rag_tasks.retrieve", return_value=fake_reranked):
-        result = graph_builder.retrieve_and_rerank_node(state)
+    with patch("graph_builder.rag_tasks.retrieve", return_value=fake_chunks):
+        result = graph_builder.retrieve_node(state)
 
-    assert result["score"] == 0.91
-    assert result["retrieved_chunks"] == fake_reranked
+    assert result["retrieved_chunks"] == fake_chunks
 
 
-def test_retrieve_and_rerank_node_rerank_failure():
+def test_retrieve_node_retrieve_failure():
     state = {"question": "What is Homer Simpson's favorite food?"}
 
     with patch(
         "graph_builder.rag_tasks.retrieve", side_effect=RuntimeError("model timeout")
     ):
         with pytest.raises(RuntimeError):
-            graph_builder.retrieve_and_rerank_node(state)
+            graph_builder.retrieve_node(state)
+
+
+def test_rerank_node_happy_path():
+    state = {
+        "question": "What is Homer Simpson's favorite food?",
+        "retrieved_chunks": [("chunk B", 0.91), ("chunk A", 0.72), ("chunk C", 0.55)],
+    }
+    fake_reranked = [("chunk B", 0.91), ("chunk A", 0.72), ("chunk C", 0.55)]
+
+    with patch("graph_builder.rag_tasks.rerank", return_value=fake_reranked):
+        result = graph_builder.rerank_node(state)
+
+    assert result["reranked_chunks"] == fake_reranked
+    assert result["score"] == 0.91
+
+
+def test_rerank_node_rerank_failure():
+    state = {
+        "question": "What is Homer Simpson's favorite food?",
+        "retrieved_chunks": [("chunk B", 0.91), ("chunk A", 0.72)],
+    }
+
+    with patch(
+        "graph_builder.rag_tasks.rerank", side_effect=RuntimeError("model timeout")
+    ):
+        with pytest.raises(RuntimeError):
+            graph_builder.rerank_node(state)
 
 
 def test_score_threshold_router_above_threshold():
@@ -60,7 +84,7 @@ from unittest.mock import patch
 async def test_generate_with_context_node_happy_path():
     state = {
         "question": "What is Homer Simpson's favorite food?",
-        "retrieved_chunks": [
+        "reranked_chunks": [
             ("Homer loves donuts.", 0.9),
             ("He works at the plant.", 0.5),
         ],

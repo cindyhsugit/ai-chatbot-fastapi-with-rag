@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from langgraph.graph import StateGraph
 
 import graph_builder
@@ -7,12 +7,17 @@ import graph_builder
 
 def test_node_wired_into_graph():
     graph = StateGraph(graph_builder.ChatState)
-    graph.add_node("retrieve_and_rerank", graph_builder.retrieve_and_rerank_node)
-    graph.set_entry_point("retrieve_and_rerank")
-    graph.set_finish_point("retrieve_and_rerank")
+    graph.add_node("retrieve_node", graph_builder.retrieve_node)
+    graph.add_node("rerank_node", graph_builder.rerank_node)
+    graph.add_edge("retrieve_node", "rerank_node")
+    graph.set_entry_point("retrieve_node")
+    graph.set_finish_point("rerank_node")
     compiled = graph.compile()
 
-    result = compiled.invoke({"question": "what is the refund policy?"})
+    with patch(
+        "graph_builder.rag_tasks.retrieve", return_value=[("chunk", 0.5)]
+    ), patch("graph_builder.rag_tasks.rerank", return_value=[("chunk", 0.5)]):
+        result = compiled.invoke({"question": "what is the refund policy?"})
 
     assert "score" in result
 
@@ -20,25 +25,31 @@ def test_node_wired_into_graph():
 @pytest.mark.asyncio
 async def test_graph_routes_low_score_to_web_search():
     graph = StateGraph(graph_builder.ChatState)
-    graph.add_node("retrieve_and_rerank", graph_builder.retrieve_and_rerank_node)
+    graph.add_node("retrieve_node", graph_builder.retrieve_node)
+    graph.add_node("rerank_node", graph_builder.rerank_node)
+    graph.add_edge("retrieve_node", "rerank_node")
     graph.add_node("generate_with_context", graph_builder.generate_with_context_node)
     graph.add_node(
         "generate_without_context", graph_builder.generate_without_context_node
     )
     graph.add_conditional_edges(
-        "retrieve_and_rerank",
+        "rerank_node",
         graph_builder.score_threshold_router,
         {
             "generate_with_context": "generate_with_context",
             "generate_without_context": "generate_without_context",
         },
     )
-    graph.set_entry_point("retrieve_and_rerank")
+    graph.set_entry_point("retrieve_node")
     compiled = graph.compile()
 
     with patch(
         "graph_builder.rag_tasks.retrieve", return_value=[("irrelevant chunk", -5.0)]
-    ), patch("main.generate_with_llm_failover", return_value="Some answer"):
+    ), patch(
+        "graph_builder.rag_tasks.rerank", return_value=[("irrelevant chunk", -5.0)]
+    ), patch(
+        "main.generate_with_llm_failover", return_value="Some answer"
+    ):
         result = await compiled.ainvoke({"question": "some question", "history": []})
 
     assert result["reply"] == "Some answer"
@@ -53,7 +64,7 @@ async def test_generate_with_context_node_wired_into_graph():
     compiled = graph.compile()
     initial_state = {
         "question": "What is Homer Simpson's favorite food?",
-        "retrieved_chunks": [("Homer loves donuts.", 0.9)],
+        "reranked_chunks": [("Homer loves donuts.", 0.9)],
         "history": [],
     }
 
@@ -78,7 +89,7 @@ async def test_generate_without_context_node_wired_into_graph():
 
     initial_state = {
         "question": "Who are Homer's family?",
-        "retrieved_chunks": [],
+        "reranked_chunks": [],
         "history": [],
     }
 
@@ -94,16 +105,18 @@ async def test_generate_without_context_node_wired_into_graph():
 @pytest.mark.asyncio
 async def test_full_graph_routes_to_web_search_on_no_knowledge():
     graph = StateGraph(graph_builder.ChatState)
-    graph.add_node("retrieve_and_rerank", graph_builder.retrieve_and_rerank_node)
+    graph.add_node("retrieve_node", graph_builder.retrieve_node)
+    graph.add_node("rerank_node", graph_builder.rerank_node)
+    graph.add_edge("retrieve_node", "rerank_node")
     graph.add_node("generate_with_context", graph_builder.generate_with_context_node)
     graph.add_node(
         "generate_without_context", graph_builder.generate_without_context_node
     )
     graph.add_node("web_search_node", graph_builder.web_search_node)
 
-    graph.set_entry_point("retrieve_and_rerank")
+    graph.set_entry_point("retrieve_node")
     graph.add_conditional_edges(
-        "retrieve_and_rerank",
+        "rerank_node",
         graph_builder.score_threshold_router,
         {
             "generate_with_context": "generate_with_context",
@@ -130,9 +143,10 @@ async def test_full_graph_routes_to_web_search_on_no_knowledge():
 
     with patch(
         "graph_builder.rag_tasks.retrieve",
-        return_value=[
-            ("irrelevant chunk", -5.0)
-        ],  # low score -> generate_without_context
+        return_value=[("irrelevant chunk", -5.0)],
+    ), patch(
+        "graph_builder.rag_tasks.rerank",
+        return_value=[("irrelevant chunk", -5.0)],
     ), patch(
         "web_search_provider.web_search_fallback",
         return_value="Some fact found via web search.",
@@ -151,16 +165,18 @@ async def test_full_graph_routes_to_web_search_on_no_knowledge():
 @pytest.mark.asyncio
 async def test_full_graph_end_to_end_with_context():
     graph = StateGraph(graph_builder.ChatState)
-    graph.add_node("retrieve_and_rerank", graph_builder.retrieve_and_rerank_node)
+    graph.add_node("retrieve_node", graph_builder.retrieve_node)
+    graph.add_node("rerank_node", graph_builder.rerank_node)
+    graph.add_edge("retrieve_node", "rerank_node")
     graph.add_node("generate_with_context", graph_builder.generate_with_context_node)
     graph.add_node(
         "generate_without_context", graph_builder.generate_without_context_node
     )
     graph.add_node("web_search_node", graph_builder.web_search_node)
 
-    graph.set_entry_point("retrieve_and_rerank")
+    graph.set_entry_point("retrieve_node")
     graph.add_conditional_edges(
-        "retrieve_and_rerank",
+        "rerank_node",
         graph_builder.score_threshold_router,
         {
             "generate_with_context": "generate_with_context",
@@ -189,6 +205,9 @@ async def test_full_graph_end_to_end_with_context():
         "graph_builder.rag_tasks.retrieve",
         return_value=[("Homer loves donuts.", 0.5)],
     ), patch(
+        "graph_builder.rag_tasks.rerank",
+        return_value=[("Homer loves donuts.", 0.9)],
+    ), patch(
         "main.generate_with_llm_failover",
         return_value="Homer's favorite food is donuts.",
     ):
@@ -200,16 +219,18 @@ async def test_full_graph_end_to_end_with_context():
 @pytest.mark.asyncio
 async def test_full_graph_end_to_end_without_context():
     graph = StateGraph(graph_builder.ChatState)
-    graph.add_node("retrieve_and_rerank", graph_builder.retrieve_and_rerank_node)
+    graph.add_node("retrieve_node", graph_builder.retrieve_node)
+    graph.add_node("rerank_node", graph_builder.rerank_node)
+    graph.add_edge("retrieve_node", "rerank_node")
     graph.add_node("generate_with_context", graph_builder.generate_with_context_node)
     graph.add_node(
         "generate_without_context", graph_builder.generate_without_context_node
     )
     graph.add_node("web_search_node", graph_builder.web_search_node)
 
-    graph.set_entry_point("retrieve_and_rerank")
+    graph.set_entry_point("retrieve_node")
     graph.add_conditional_edges(
-        "retrieve_and_rerank",
+        "rerank_node",
         graph_builder.score_threshold_router,
         {
             "generate_with_context": "generate_with_context",
@@ -236,12 +257,13 @@ async def test_full_graph_end_to_end_without_context():
 
     with patch(
         "graph_builder.rag_tasks.retrieve",
-        return_value=[
-            ("irrelevant chunk", -5.0)
-        ],  # low score -> generate_without_context
+        return_value=[("irrelevant chunk", -5.0)],
+    ), patch(
+        "graph_builder.rag_tasks.rerank",
+        return_value=[("irrelevant chunk", -5.0)],
     ), patch(
         "main.generate_with_llm_failover",
-        return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",  # not NO_KNOWLEDGE
+        return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
     ):
         result = await compiled.ainvoke(initial_state)
 

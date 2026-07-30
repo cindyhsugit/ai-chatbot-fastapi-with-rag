@@ -4,7 +4,9 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
-
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+    SentenceTransformer('all-MiniLM-L6-v2'); \
+    CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 COPY . .
 
 EXPOSE 8080
