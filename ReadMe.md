@@ -104,3 +104,76 @@ while Gemini's can be a list of content blocks (`[{"type": "text", "text":
 normalization utility (`unify_response_content.to_text`) so downstream code
 never needs to know which provider actually answered.
 
+**Intermittent `NO_KNOWLEDGE` flip-flopping.** A multi-turn conversation
+intermittently lost context on follow-up questions (e.g., "who is his son"
+failing to resolve to a prior "Homer Simpson" reference). Systematic
+elimination ruled out checkpointer misconfiguration, `thread_id` mismatches,
+and prompt-template issues — the root cause turned out to be LLM sampling
+variance (`temperature=1` by default) at a borderline decision point in the
+knowledge-gate prompt. Confirmed via five repeated runs on identical input
+(4/5 answered correctly, 1/5 hedged), then fixed by setting `temperature=0`
+on the generation model.
+
+**Closing the last coverage gaps with an AI coding agent.** Used Cursor
+(in Ask mode — reviewing every proposed change before applying it, not
+auto-accepting agent edits) to help close the final gaps in test coverage.
+Two findings worth noting:
+- A subprocess-based test for a `__main__` guard passed correctly, but
+  coverage still reported the line as missing — `coverage.py` doesn't track
+  execution inside child processes by default. Rather than engineer
+  subprocess-level coverage tracking for a single print statement, excluded
+  that pattern via `.coveragerc`'s `exclude_lines`, which is standard
+  practice for `__main__` guards.
+- Two FastAPI route handlers (`/` and `/langgraph`) had never been directly
+  tested by existing tests. The agent correctly traced the expected test
+  assertion back to the actual `<title>` tag in the Jinja template rather
+  than guessing placeholder text, and correctly identified that — unlike
+  the `__main__` guard — these lines needed no coverage exclusion, since
+  they're normally testable in-process.
+
+
+![Cursor coverage debugging session](screenshots/cursor_coverage_debug_annotated.png)
+
+## Tech stack
+
+FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
+`langchain-google-genai`) · ChromaDB · HuggingFace embeddings & cross-encoder
+· OpenAI API · Gemini API · Tavily · Docker · Google Cloud Run· Cursor
+(AI-assisted development)
+
+## Testing
+This project uses LangSmith to trace every graph run. Each turn's
+inputs/outputs and message history are inspected via the Turns view,
+making it easy to debug multi-step agent behavior.
+![LangSmith Observability]screenshots/annotated_langsmith.jpg)
+
+
+Pytest suite with mocked provider calls, graph node unit tests, and
+integration tests exercising the compiled graph end-to-end — **100% line
+coverage across the codebase** (792 statements, 72 tests). Run with:
+
+```bash
+pytest --cov
+```
+
+
+## Running locally
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+Requires `OPENAI_API_KEY` and `GEMINI_API_KEY` set as environment variables
+(or in an `.env` / `apiKey.env` file).
+
+## Repo structure
+
+```
+main.py                 # FastAPI app, /langgraphchat endpoint
+graph_builder.py         # LangGraph StateGraph, nodes, conditional edges
+providers/                # OpenAI / Gemini LLM wrappers
+utility/                   # Cross-provider response normalization
+scripts/                   # Standalone debugging/calibration scripts
+test/                      # Pytest suite
+```
