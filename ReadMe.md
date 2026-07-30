@@ -164,8 +164,9 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Requires `OPENAI_API_KEY` and `GEMINI_API_KEY` set as environment variables
-(or in an `.env` / `apiKey.env` file).
+Requires `OPENAI_API_KEY`, `GEMINI_API_KEY`, `TAVILY_API_KEY`, and
+`LANGSMITH_API_KEY` set as environment variables (or in an `.env` /
+`apiKey.env` file).
 
 ## Repo structure
 
