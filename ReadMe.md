@@ -1,6 +1,6 @@
 ## Architecture Diagram
 
-![LangGraph flow](screenshots/graph_diagram_v2.png)
+![LangGraph flow](screenshots/graph_diagram_v3.png)
 
 ## Demo Trace
 
@@ -33,7 +33,10 @@ This app implements a three-tier CRAG (Corrective RAG) pipeline as a LangGraph
 question
    │
    ▼
-retrieve_and_rerank_node  (ChromaDB + cross-encoder reranker)
+retrieve_node  (ChromaDB vector search, top-20)
+   │
+   ▼
+rerank_node  (cross-encoder reranker, top-3 + score)
    │
    ├─ score ≥ threshold ──► generate_with_context_node ──► reply
    │
@@ -44,9 +47,12 @@ retrieve_and_rerank_node  (ChromaDB + cross-encoder reranker)
                                   └─ NO_KNOWLEDGE ──► web_search_node ──► reply
 ```
 
-- **Retrieval:** HuggingFace embeddings (`all-MiniLM-L6-v2`) + ChromaDB vector store
-- **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows top-20 retrieved
-  chunks down to the top 3 most relevant
+- **Retrieval:** HuggingFace embeddings (`all-MiniLM-L6-v2`) + ChromaDB vector
+  store (`retrieve_node`)
+- **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows top-20
+  retrieved chunks down to the top 3 most relevant (`rerank_node`) — split
+  into its own node so LangSmith traces retrieval and reranking latency
+  separately
 - **Generation:** Two-tier LLM failover — OpenAI primary, Gemini fallback, via
   LangChain's `with_fallbacks()`
 - **Fallback:** Tavily web search when neither local context nor trained
@@ -71,6 +77,16 @@ LangGraph to get:
   custom message-format converters for OpenAI and Gemini
 
 ## Notable debugging story
+
+**Combined retrieve+rerank node obscured the real bottleneck.** LangSmith
+traces initially showed one node's total latency without distinguishing
+vector search from cross-encoder reranking. Split the original
+`retrieve_and_rerank_node` into `retrieve_node` and `rerank_node` so each
+step traces separately — confirmed the cross-encoder reranking step, not the
+vector search, was the dominant cost, and opened the door to targeted
+optimizations (fewer reranked candidates, lower-precision inference, smaller
+model variants) without touching retrieval at all.
+
 **Dual history tracking.** Early in the migration, conversation history was
 tracked in two places at once: a hand-rolled `session_store` dict, and
 LangGraph's `MemorySaver` checkpointer (via the `add_messages` reducer). Both
@@ -88,75 +104,3 @@ while Gemini's can be a list of content blocks (`[{"type": "text", "text":
 normalization utility (`unify_response_content.to_text`) so downstream code
 never needs to know which provider actually answered.
 
-**Intermittent `NO_KNOWLEDGE` flip-flopping.** A multi-turn conversation
-intermittently lost context on follow-up questions (e.g., "who is his son"
-failing to resolve to a prior "Homer Simpson" reference). Systematic
-elimination ruled out checkpointer misconfiguration, `thread_id` mismatches,
-and prompt-template issues — the root cause turned out to be LLM sampling
-variance (`temperature=1` by default) at a borderline decision point in the
-knowledge-gate prompt. Confirmed via five repeated runs on identical input
-(4/5 answered correctly, 1/5 hedged), then fixed by setting `temperature=0`
-on the generation model.
-
-**Closing the last coverage gaps with an AI coding agent.** Used Cursor
-(in Ask mode — reviewing every proposed change before applying it, not
-auto-accepting agent edits) to help close the final gaps in test coverage.
-Two findings worth noting:
-- A subprocess-based test for a `__main__` guard passed correctly, but
-  coverage still reported the line as missing — `coverage.py` doesn't track
-  execution inside child processes by default. Rather than engineer
-  subprocess-level coverage tracking for a single print statement, excluded
-  that pattern via `.coveragerc`'s `exclude_lines`, which is standard
-  practice for `__main__` guards.
-- Two FastAPI route handlers (`/` and `/langgraph`) had never been directly
-  tested by existing tests. The agent correctly traced the expected test assertion back to the actual `<title>` tag in the Jinja template rather
-  than guessing placeholder text, and correctly identified that — unlike
-  the `__main__` guard — these lines needed no coverage exclusion, since
-  they're normally testable in-process.
-  
-  
-![Cursor coverage debugging session](screenshots/cursor_coverage_debug_annotated.png)
-
-## Tech stack
-
-FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
-`langchain-google-genai`) · ChromaDB · HuggingFace embeddings & cross-encoder
-· OpenAI API · Gemini API · Tavily · Docker · Google Cloud Run· Cursor
-(AI-assisted development)
-
-## Testing
-This project uses LangSmith to trace every graph run. Each turn's 
-inputs/outputs and message history are inspected via the Turns view, 
-making it easy to debug multi-step agent behavior.
-![LangSmith Observability]screenshots/annotated_langsmith.jpg)
-
-
-Pytest suite with mocked provider calls, graph node unit tests, and
-integration tests exercising the compiled graph end-to-end — **100% line
-coverage across the codebase** (763 statements, 70 tests). Run with:
-
-```bash
-pytest --cov
-```
-
-
-## Running locally
-
-```bash
-pip install -r requirements.txt
-uvicorn main:app --reload
-```
-
-Requires `OPENAI_API_KEY` and `GEMINI_API_KEY` set as environment variables
-(or in an `.env` / `apiKey.env` file).
-
-## Repo structure
-
-```
-main.py                 # FastAPI app, /langgraphchat endpoint
-graph_builder.py         # LangGraph StateGraph, nodes, conditional edges
-providers/                # OpenAI / Gemini LLM wrappers
-utility/                   # Cross-provider response normalization
-scripts/                   # Standalone debugging/calibration scripts
-test/                      # Pytest suite
-```
