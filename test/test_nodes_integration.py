@@ -16,7 +16,7 @@ def test_node_wired_into_graph():
 
     with patch(
         "graph_builder.rag_tasks.retrieve", return_value=[("chunk", 0.5)]
-    ), patch("graph_builder.rag_tasks.rerank", return_value=[("chunk", 0.5)]):
+    ), patch("graph_builder.rag_tasks.rerank_with_onnx", return_value=[("chunk", 0.5)]):
         result = compiled.invoke({"question": "what is the refund policy?"})
 
     assert "score" in result
@@ -46,7 +46,8 @@ async def test_graph_routes_low_score_to_web_search():
     with patch(
         "graph_builder.rag_tasks.retrieve", return_value=[("irrelevant chunk", -5.0)]
     ), patch(
-        "graph_builder.rag_tasks.rerank", return_value=[("irrelevant chunk", -5.0)]
+        "graph_builder.rag_tasks.rerank_with_onnx",
+        return_value=[("irrelevant chunk", -5.0)],
     ), patch(
         "main.generate_with_llm_failover", return_value="Some answer"
     ):
@@ -145,7 +146,7 @@ async def test_full_graph_routes_to_web_search_on_no_knowledge():
         "graph_builder.rag_tasks.retrieve",
         return_value=[("irrelevant chunk", -5.0)],
     ), patch(
-        "graph_builder.rag_tasks.rerank",
+        "graph_builder.rag_tasks.rerank_with_onnx",
         return_value=[("irrelevant chunk", -5.0)],
     ), patch(
         "web_search_provider.web_search_fallback",
@@ -205,7 +206,7 @@ async def test_full_graph_end_to_end_with_context():
         "graph_builder.rag_tasks.retrieve",
         return_value=[("Homer loves donuts.", 0.5)],
     ), patch(
-        "graph_builder.rag_tasks.rerank",
+        "graph_builder.rag_tasks.rerank_with_onnx",
         return_value=[("Homer loves donuts.", 0.9)],
     ), patch(
         "main.generate_with_llm_failover",
@@ -259,7 +260,7 @@ async def test_full_graph_end_to_end_without_context():
         "graph_builder.rag_tasks.retrieve",
         return_value=[("irrelevant chunk", -5.0)],
     ), patch(
-        "graph_builder.rag_tasks.rerank",
+        "graph_builder.rag_tasks.rerank_with_onnx",
         return_value=[("irrelevant chunk", -5.0)],
     ), patch(
         "main.generate_with_llm_failover",

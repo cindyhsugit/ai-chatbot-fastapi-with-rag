@@ -1,6 +1,8 @@
 import rag_tasks
-import numpy as np
+
 import pytest
+from types import SimpleNamespace
+
 from unittest.mock import patch
 import vectorstore_chroma
 import reranker_hf
@@ -35,4 +37,4 @@ def test_retrieve_passes_k_to_chroma_search():
         "vectorstore_chroma.search", return_value=[]
     ) as mock_search:
         rag_tasks.retrieve("some question", k=5)
-    mock_search.assert_called_once_with(query_embedding=[0.1, 0.2, 0.3], k=20)
+    mock_search.assert_called_once_with(query_embedding=[0.1, 0.2, 0.3], k=5)

@@ -42,7 +42,7 @@ def test_rerank_node_happy_path():
     }
     fake_reranked = [("chunk B", 0.91), ("chunk A", 0.72), ("chunk C", 0.55)]
 
-    with patch("graph_builder.rag_tasks.rerank", return_value=fake_reranked):
+    with patch("graph_builder.rag_tasks.rerank_with_onnx", return_value=fake_reranked):
         result = graph_builder.rerank_node(state)
 
     assert result["reranked_chunks"] == fake_reranked
@@ -56,7 +56,8 @@ def test_rerank_node_rerank_failure():
     }
 
     with patch(
-        "graph_builder.rag_tasks.rerank", side_effect=RuntimeError("model timeout")
+        "graph_builder.rag_tasks.rerank_with_onnx",
+        side_effect=RuntimeError("model timeout"),
     ):
         with pytest.raises(RuntimeError):
             graph_builder.rerank_node(state)
