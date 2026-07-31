@@ -15,10 +15,19 @@ import embeddings_hf
 import reranker_hf
 import vectorstore_chroma
 
+
+from optimum.onnxruntime import ORTModelForSequenceClassification
+from transformers import AutoTokenizer
+import torch
+
 # Setup
 load_dotenv()
 load_dotenv("apiKey.env")
 
+# Load ONNX model at startup
+model_dir = "./ms-marco-onnx"
+onnx_model = ORTModelForSequenceClassification.from_pretrained(model_dir)
+tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
 # Chunk text replaced by langchain textsplitter
 # chunk_text(text: str, chunk_size: int = 500) -> List[str]:
@@ -88,7 +97,7 @@ def retrieve(question, k=20):
     #    np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
     retrieved_chunks = vectorstore_chroma.search(
-        query_embedding=question_embedding, k=20
+        query_embedding=question_embedding, k=k
     )
 
     end = time.time()
@@ -109,6 +118,36 @@ def rerank(
 
     # now use reranked_chunks (not retrieved_chunks) when building the prompt for generation
     return reranked_chunks
+
+
+def rerank_with_onnx(
+    query: str, retrieved_chunks: list[str], top_k: int = 3
+) -> list[tuple[str, float]]:
+    start = time.time()
+    # Build pairs [query, candidate]
+    pairs = [[query, candidate] for candidate in retrieved_chunks]
+
+    # Tokenize all pairs together efficiently
+    inputs = tokenizer(pairs, padding=True, truncation=True, return_tensors="pt")
+
+    # Run inference with the ONNX model
+    with torch.no_grad():
+        outputs = onnx_model(**inputs)
+        scores = outputs.logits.squeeze(-1)  # Extract raw score logits
+
+    # Convert scores to a Python list
+    score_list = (
+        scores.tolist() if isinstance(scores, torch.Tensor) else [scores.item()]
+    )
+
+    # Pair with candidates and sort descending
+    scored = list(zip(retrieved_chunks, [float(s) for s in score_list]))
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    end = time.time()
+    print(f"-- -- Hugging face cross encoder with onnx Time: {end-start:.2f}s")
+
+    return scored[:top_k]
 
 
 # Returns the file's text content, or exits cleanly with a clear message if anything goes wrong

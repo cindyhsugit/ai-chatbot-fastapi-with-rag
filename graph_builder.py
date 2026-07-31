@@ -53,7 +53,7 @@ class ChatState(TypedDict):
 def retrieve_node(state: ChatState) -> dict:
 
     question = state["question"]
-    retrieved_chunks = rag_tasks.retrieve(question)
+    retrieved_chunks = rag_tasks.retrieve(question, 10)
 
     return {"retrieved_chunks": retrieved_chunks}
 
@@ -61,7 +61,7 @@ def retrieve_node(state: ChatState) -> dict:
 def rerank_node(state: ChatState) -> dict:
     question = state["question"]
     retrieved_chunks = state["retrieved_chunks"]
-    reranked = rag_tasks.rerank(question, retrieved_chunks)
+    reranked = rag_tasks.rerank_with_onnx(question, retrieved_chunks)
 
     # top score drives the threshold decision in the next node
     top_score = reranked[0][1] if reranked else 0.0
