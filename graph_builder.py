@@ -33,23 +33,6 @@ class ChatState(TypedDict):
     reply: str
 
 
-# open AI expect "role" of "user" or "assistant" in message
-# input
-# history = [
-#     HumanMessage(content="What's the capital of France?"),
-#     AIMessage(content="The capital of France is Paris."),
-#     HumanMessage(content="What's its population?"),
-#     AIMessage(content="Paris has a population of about 2.1 million people."),
-# ]
-# output
-# [
-#     {"role": "user", "content": "What's the capital of France?"},
-#     {"role": "assistant", "content": "The capital of France is Paris."},
-#     {"role": "user", "content": "What's its population?"},
-#     {"role": "assistant", "content": "Paris has a population of about 2.1 million people."},
-# ]
-
-
 # 1st node
 def retrieve_node(state: ChatState) -> dict:
 
