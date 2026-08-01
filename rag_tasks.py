@@ -15,7 +15,7 @@ import embeddings_hf
 import reranker_hf
 import vectorstore_chroma
 
-
+import onnxruntime as ort
 from optimum.onnxruntime import ORTModelForSequenceClassification
 from transformers import AutoTokenizer
 import torch
@@ -26,27 +26,19 @@ load_dotenv("apiKey.env")
 
 # Load ONNX model at startup
 model_dir = "./ms-marco-onnx"
-onnx_model = ORTModelForSequenceClassification.from_pretrained(model_dir)
+
+options = ort.SessionOptions()
+options.intra_op_num_threads = 2  # match Cloud Run's 2 vCPU
+options.inter_op_num_threads = 1  # single-model pipeline, no parallel subgraphs
+options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+onnx_model = ORTModelForSequenceClassification.from_pretrained(
+    model_dir, provider="CPUExecutionProvider", session_options=options
+)
 tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
-# Chunk text replaced by langchain textsplitter
-# chunk_text(text: str, chunk_size: int = 500) -> List[str]:
-# def chunk_text(text, chunk_size=500):
-#     words = text.split()
-#     chunks = []
-#     # range(start, stop, step) — here start=0, stop=len(words)
-#     # (the total number of words), step=chunk_size (500)
-#     for i in range(0, len(words), chunk_size):
-
-#         # grab words starting at position i, up to (but not including) position i + chunk_size
-#         slicedWords = words[i : i + chunk_size]
-
-#         chunk = " ".join(slicedWords)
-#         chunks.append(chunk)
-#     return chunks
-
-
-# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Warm-up: absorb the cold-start cost here instead of on a user's first request
+_ = onnx_model(**tokenizer("warmup query", "warmup passage", return_tensors="pt"))
 
 
 # get_embedding(text: str) -> List[float]:
@@ -65,14 +57,6 @@ def get_embedding(text):
     return_list = embeddings_hf.embed_texts([text])[0].tolist()
 
     return return_list
-
-
-# different flavor with async
-# async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-# async def get_embedding_async(text):
-#    # was: response = await async_client.embeddings.create(model="text-embedding-3-small", input=text)
-#     return_list = embeddings_hf.embed_texts([text])[0]
-#     return return_list
 
 
 # Retrieve relevant chunks for a new question
