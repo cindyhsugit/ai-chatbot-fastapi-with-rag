@@ -141,6 +141,16 @@ FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 · OpenAI API · Gemini API · Tavily · Docker · Google Cloud Run· Cursor
 (AI-assisted development)
 
+## ⚡ Performance Benchmark: PyTorch vs. ONNX Runtime
+
+Here is the latency comparison for the cross-encoder reranking step in my RAG pipeline:
+
+| Execution Stage | Pre-ONNX (Standard PyTorch) | Post-ONNX Runtime | Speedup / Improvement |
+| :--- | :--- | :--- | :--- |
+| **Cold Run (First Request)** | 0.45s | 0.60s | Initial session overhead |
+| **Warm Run (Subsequent Requests)** | 0.08s – 0.36s *(Avg ~0.22s)* | **0.07s – 0.08s** *(Avg ~0.075s)* | **Up to 3x–4x faster** |
+| **Execution Jitter** | High variance | Low variance / Flattened | Highly consistent latency |
+
 ## Testing
 This project uses LangSmith to trace every graph run. Each turn's
 inputs/outputs and message history are inspected via the Turns view,
