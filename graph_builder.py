@@ -50,6 +50,7 @@ class ChatState(TypedDict):
 # ]
 
 
+# 1st node
 def retrieve_node(state: ChatState) -> dict:
 
     question = state["question"]
@@ -58,6 +59,7 @@ def retrieve_node(state: ChatState) -> dict:
     return {"retrieved_chunks": retrieved_chunks}
 
 
+# 2nd node
 def rerank_node(state: ChatState) -> dict:
     question = state["question"]
     retrieved_chunks = state["retrieved_chunks"]
@@ -87,30 +89,8 @@ def not_in_context_router(state: ChatState) -> str:
         return "END"
 
 
-# # 2nd node after retrieval node
-# async def generate_with_context_node(state: ChatState) -> dict:
-#     question = state["question"]
-#     chunks = state["reranked_chunks"]  # list of (text, score) tuples
-#     history = state["history"]
-#     context_text = "\n\n".join(chunk_text for chunk_text, _ in chunks)
+# 3rd node after retrieval node
 
-#     from main import construct_prompt
-
-#     # fmt:off
-#     prompt = construct_prompt(
-#         rules=prompt_rules.CONTEXT_ONLY_RULE, 
-#         context=context_text, 
-#         question=question
-#     )
-#     # fmt:on#     messages = history + [HumanMessage(content=prompt)]#     from main import generate_with_llm_failover#     reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
-#     # return only the fields they actually changed
-#     return {
-#         "reply": reply,
-#         "history": [
-#             HumanMessage(content=question),
-#             AIMessage(content=reply),
-#         ],
-#     }
 
 async def generate_with_context_node(state: ChatState) -> dict:
     question = state["question"]
@@ -119,14 +99,14 @@ async def generate_with_context_node(state: ChatState) -> dict:
     context_text = "\n\n".join(chunk_text for chunk_text, _ in chunks)
 
     # 1. Structure as clear system rules + context + user input
-    prompt=f"{prompt_rules.CONTEXT_ONLY_RULE}\n\nContext:\n{context_text}"
+    prompt = f"{prompt_rules.CONTEXT_ONLY_RULE}\n\nContext:\n{context_text}"
 
     # 2. Construct clean message history with system instructions at the root
     messages = history + [HumanMessage(content=question)]
 
     from main import generate_with_llm_failover
 
-    # 3. Pass the full message array directly to your failover function
+    # 3. Pass prompt and message over to generate
     reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
 
     return {
@@ -137,6 +117,7 @@ async def generate_with_context_node(state: ChatState) -> dict:
         ],
     }
 
+
 # 3rd node after retrieval node
 async def generate_without_context_node(state: ChatState) -> dict:
     question = state["question"]
@@ -145,7 +126,7 @@ async def generate_without_context_node(state: ChatState) -> dict:
     # System rules pinned once at the root, not repeated inline every turn
     prompt = prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE
 
-    messages=history + [HumanMessage(content=question)]
+    messages = history + [HumanMessage(content=question)]
 
     from main import generate_with_llm_failover
 
@@ -170,7 +151,7 @@ async def web_search_node(state: ChatState) -> dict:
         }
 
     history = state["history"]
-    prompt=f"{prompt_rules.WEB_SEARCH_RULE}\n\nWeb results:\n{web_results}"
+    prompt = f"{prompt_rules.WEB_SEARCH_RULE}\n\nWeb results:\n{web_results}"
     messages = history + [HumanMessage(content=question)]
 
     from main import generate_with_llm_failover

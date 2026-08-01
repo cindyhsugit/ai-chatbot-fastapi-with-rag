@@ -39,6 +39,7 @@ def test_web_search_fallback_error_path_tavily_throws(mock_tavily):
 
     assert result == ""
 
+
 # Covers line 48: the happy-path and empty-content tests always supply at least
 # one entry in "results", and the exception test never reaches line 46. This
 # test mocks Tavily returning a successful response with no usable results
@@ -56,9 +57,7 @@ def test_web_search_fallback_empty_results_returns_empty_string(
 ):
     mock_tavily.search.return_value = tavily_response
 
-    result = asyncio.run(
-        web_search_provider.web_search_fallback("any question")
-    )
+    result = asyncio.run(web_search_provider.web_search_fallback("any question"))
 
     assert result == ""
 
@@ -81,6 +80,7 @@ def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
     assert "Actual useful content." in result
     assert "Some Page" not in result  # blank-content result correctly filtered out
 
+
 @pytest.mark.asyncio
 async def test_web_search_node_uses_web_search_rule():
     state = {"question": "what is trump's necktie color today", "history": []}
@@ -88,22 +88,16 @@ async def test_web_search_node_uses_web_search_rule():
     with patch(
         "web_search_provider.web_search_fallback",
         new=AsyncMock(return_value="some search result text"),
-    ), patch("main.construct_prompt") as mock_construct_prompt, patch(
+    ), patch(
         "main.generate_with_llm_failover",
         new=AsyncMock(return_value="a synthesized answer"),
-    ):
-
-        mock_construct_prompt.return_value = "built prompt"
-
+    ) as mock_generate:
         result = await web_search_node(state)
 
-        # Assert the WEB_SEARCH_RULE was used, not CONTEXT_ONLY_RULE
-        called_rule = (
-            mock_construct_prompt.call_args.args[0]
-            if mock_construct_prompt.call_args.args
-            else mock_construct_prompt.call_args.kwargs["rules"]
-        )
-        assert called_rule == prompt_rules.WEB_SEARCH_RULE
+        assert mock_generate.await_count == 1
+        prompt = mock_generate.await_args.kwargs["prompt"]
+        assert prompt_rules.WEB_SEARCH_RULE in prompt
+        assert "some search result text" in prompt
 
         expected_reply = "a synthesized answer\n\n(Note: answer sourced from live web search, not local knowledge base.)"
 
