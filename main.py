@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 # Third-party: Langgraph / LangChain
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 # Local modules
@@ -109,17 +109,15 @@ async def langgraph(request: Request):
 
 # OpenAI first, falls back to Gemini on failure
 async def generate_with_llm_failover(
-    prompt: str,
-    messages_override: list = None,  # full list of conversation messages (history + current prompt)
+    prompt: str,  # system-level rules/instructions for this turn
+    messages: list = None,  # conversation history + current question (no rules baked in)
 ) -> str:
 
-    messages = messages_override or [
-        HumanMessage(content=prompt)
-    ]  # wrapping the plain prompt string into a single-message list.
+    full_messages = [SystemMessage(content=prompt)] + messages
 
     # messages is either (history+query) or prompt
 
-    response = await backup_llm.ainvoke(messages)
+    response = await backup_llm.ainvoke(full_messages)
 
     # open ai and gemini returns different response structure
     return utility.unify_response_content.to_text(response.content)

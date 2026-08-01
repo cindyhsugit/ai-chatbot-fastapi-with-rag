@@ -1,95 +1,299 @@
 <!doctype html>
-<html>
+<html lang="en">
+
 <head>
   <meta charset="utf-8">
-  <title>Chat App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Simpsons RAG AI | LangGraph + ONNX</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
   <style>
+    :root {
+      --primary: #4F46E5;
+      --primary-hover: #4338CA;
+      --bg-color: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --text-main: #1E293B;
+      --text-muted: #64748B;
+      --border-color: #E2E8F0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      margin: 0;
+      padding: 20px 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .notice-banner {
+      width: 100%;
+      max-width: 650px;
+      text-align: center;
+      padding: 0 10px;
+      margin-bottom: 12px;
+    }
+
+    .chat-container {
+      width: 100%;
+      max-width: 650px;
+      background: var(--card-bg);
+      border-radius: 12px;
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+    }
+
+    .chat-header {
+      padding: 16px 20px;
+      background: #FFFFFF;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .badge {
+      font-size: 12px;
+      background: #EEF2FF;
+      color: var(--primary);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+
+    #messages {
+      flex: 1;
+      height: 400px;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #FAFAFA;
+    }
+
+    .message {
+      padding: 10px 14px;
+      border-radius: 8px;
+      max-width: 80%;
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+
+    .message.user {
+      background: var(--primary);
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 2px;
+    }
+
+    .message.bot {
+      background: #FFFFFF;
+      color: var(--text-main);
+      align-self: flex-start;
+      border-bottom-left-radius: 2px;
+      border: 1px solid var(--border-color);
+    }
+
+    .input-area {
+      padding: 16px;
+      background: #FFFFFF;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 10px;
+    }
+
+    #msg {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #msg:focus {
+      border-color: var(--primary);
+    }
+
+    #send-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0 18px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #send-btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+
+    #send-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .hints-bar {
+      padding: 10px 20px;
+      background: #F8FAFC;
+      border-top: 1px solid var(--border-color);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .hint-chip {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--primary);
+      transition: background 0.1s;
+    }
+
+    .hint-chip:hover {
+      background: #EEF2FF;
+    }
+
     .spinner {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin: 8px 0;
-      color: #666;
+      color: var(--text-muted);
       font-style: italic;
+      font-size: 0.9rem;
     }
+
     .spinner::before {
       content: "";
-      width: 16px;
-      height: 16px;
-      border: 2px solid #ddd;
-      border-top: 2px solid #333;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #CBD5E1;
+      border-top: 2px solid var(--primary);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
+
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
   </style>
 </head>
+
 <body>
-  <div class="chat-box">
-    <div id="messages"></div>
-    <input id="msg" placeholder="Type a message..." />
-    <button id="send-btn" onclick="sendMsg()">Send</button>
-    <p class="hint">💡 Try asking: "What is Homer Simpson's favorite food?"</p>
+
+  <div class="notice-banner">
+    <p style="font-size: 0.95em; color: #DC2626; margin: 0; font-weight: 600; line-height: 1.4;">
+      Note: This knowledge base includes an intentionally seeded fake fact
+      (Homer Simpson's favorite food) to test whether the bot correctly uses
+      retrieved context vs. outside knowledge.
+    </p>
   </div>
+
+  <div class="chat-container">
+    <div class="chat-header">
+      <h2>The Simpsons Knowledge RAG</h2>
+      <span class="badge">v1.1 • LangGraph + ONNX</span>
+    </div>
+
+    <div id="messages">
+      <div class="message bot"><b>Bot:</b> Hello! I'm your local RAG assistant with The Simpsons knowledge. Ask me
+        a question</div>
+    </div>
+
+    <div class="hints-bar">
+      <span>Try asking:</span>
+      <span class="hint-chip" onclick="fillInput('What is Homer Simpson\'s favorite food?')">Homer's favorite
+        food?</span>
+      <span class="hint-chip" onclick="fillInput('Who is Lisa Simpson?')">Lisa Simpson</span>
+      <span class="hint-chip" onclick="fillInput('Where is Homer now?')">Find Homer</span>
+    </div>
+
+    <div class="input-area">
+      <input id="msg" placeholder="Ask a question about the Simpsons..." autofocus />
+      <button id="send-btn" onclick="sendMsg()">Send</button>
+    </div>
+  </div>
+
   <script>
-    const sessionId = crypto.randomUUID();  
+    const sessionId = crypto.randomUUID();
+
     function scrollToBottom() {
       const messagesDiv = document.getElementById("messages");
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
+    function fillInput(text) {
+      document.getElementById("msg").value = text;
+      document.getElementById("msg").focus();
+    }
+
     async function sendMsg() {
-      console.log("button clicked");
-      const message = document.getElementById("msg").value;
-      if (!message.trim()) return;
+      const msgInput = document.getElementById("msg");
+      const message = msgInput.value.trim();
+      if (!message) return;
 
       const messagesDiv = document.getElementById("messages");
       const sendBtn = document.getElementById("send-btn");
 
-      // show the user's message immediately
-      messagesDiv.innerHTML += `<p><b>You:</b> ${message}</p>`;
-      document.getElementById("msg").value = "";
-      scrollToBottom(); 
+      messagesDiv.innerHTML += `<div class="message user"><b>You:</b> ${message}</div>`;
+      msgInput.value = "";
+      scrollToBottom();
 
-      // add spinner placeholder, keep a reference so we can remove just this one
       const spinnerId = "spinner-" + Date.now();
-      messagesDiv.innerHTML += `<p id="${spinnerId}" class="spinner">Thinking...</p>`;
+      messagesDiv.innerHTML += `<div id="${spinnerId}" class="message bot"><span class="spinner">Thinking...</span></div>`;
       sendBtn.disabled = true;
-      scrollToBottom(); 
+      scrollToBottom();
 
       try {
         const res = await fetch("/langgraphchat", {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({ message , session_id: sessionId})
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, session_id: sessionId })
         });
         const data = await res.json();
 
         document.getElementById(spinnerId).outerHTML =
-          `<p><b>Bot:</b> ${data.reply}</p>`;
-          scrollToBottom(); 
-          console.log(data);
+          `<div class="message bot"><b>Bot:</b> ${data.reply}</div>`;
+        scrollToBottom();
       } catch (err) {
         document.getElementById(spinnerId).outerHTML =
-          `<p><b>Bot:</b> Something went wrong. Please try again.</p>`;
-          scrollToBottom(); 
-          console.error(err);
+          `<div class="message bot"><b>Bot:</b> Something went wrong. Please try again.</div>`;
+        scrollToBottom();
+        console.error(err);
       } finally {
         sendBtn.disabled = false;
       }
     }
 
-    // allow Enter key to send
-    document.getElementById("msg").addEventListener("keypress", function(e) {
+    document.getElementById("msg").addEventListener("keypress", function (e) {
       if (e.key === "Enter") sendMsg();
     });
   </script>
 </body>
-<div style="text-align: right;">
-    <span style="font-size:14px;color:#7F77DD;">v1.0 — LangGraph</span>
-</div>
-  
+
 </html>

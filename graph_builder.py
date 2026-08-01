@@ -3,7 +3,7 @@ from typing import TypedDict, Annotated
 
 # Third-party
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph.message import add_messages
@@ -87,29 +87,48 @@ def not_in_context_router(state: ChatState) -> str:
         return "END"
 
 
-# 2nd node after retrieval node
+# # 2nd node after retrieval node
+# async def generate_with_context_node(state: ChatState) -> dict:
+#     question = state["question"]
+#     chunks = state["reranked_chunks"]  # list of (text, score) tuples
+#     history = state["history"]
+#     context_text = "\n\n".join(chunk_text for chunk_text, _ in chunks)
+
+#     from main import construct_prompt
+
+#     # fmt:off
+#     prompt = construct_prompt(
+#         rules=prompt_rules.CONTEXT_ONLY_RULE, 
+#         context=context_text, 
+#         question=question
+#     )
+#     # fmt:on#     messages = history + [HumanMessage(content=prompt)]#     from main import generate_with_llm_failover#     reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
+#     # return only the fields they actually changed
+#     return {
+#         "reply": reply,
+#         "history": [
+#             HumanMessage(content=question),
+#             AIMessage(content=reply),
+#         ],
+#     }
+
 async def generate_with_context_node(state: ChatState) -> dict:
     question = state["question"]
     chunks = state["reranked_chunks"]  # list of (text, score) tuples
     history = state["history"]
     context_text = "\n\n".join(chunk_text for chunk_text, _ in chunks)
 
-    from main import construct_prompt
+    # 1. Structure as clear system rules + context + user input
+    prompt=f"{prompt_rules.CONTEXT_ONLY_RULE}\n\nContext:\n{context_text}"
 
-    # fmt:off
-    prompt = construct_prompt(
-        rules=prompt_rules.CONTEXT_ONLY_RULE, 
-        context=context_text, 
-        question=question
-    )
-    # fmt:on
-    messages = history + [HumanMessage(content=prompt)]
+    # 2. Construct clean message history with system instructions at the root
+    messages = history + [HumanMessage(content=question)]
 
     from main import generate_with_llm_failover
 
-    reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
+    # 3. Pass the full message array directly to your failover function
+    reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
 
-    # return only the fields they actually changed
     return {
         "reply": reply,
         "history": [
@@ -118,25 +137,20 @@ async def generate_with_context_node(state: ChatState) -> dict:
         ],
     }
 
-
 # 3rd node after retrieval node
 async def generate_without_context_node(state: ChatState) -> dict:
     question = state["question"]
     history = state["history"]
 
-    from main import construct_prompt
+    # System rules pinned once at the root, not repeated inline every turn
+    prompt = prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE
 
-    #fmt:off
-    prompt = construct_prompt(
-        rules=prompt_rules.CONTEXT_TRAINED_DATA_ONLY_RULE, 
-        context="", 
-        question=question
-    )
-    #fmt:on
-    messages = history + [HumanMessage(content=prompt)]
+    messages=history + [HumanMessage(content=question)]
+
     from main import generate_with_llm_failover
 
-    reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
+    reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
+
     return {
         "reply": reply,
         "history": [
@@ -155,17 +169,15 @@ async def web_search_node(state: ChatState) -> dict:
             "reply": "I don't know - no local context, no trained knowledge, and web search returned nothing."
         }
 
-    from main import construct_prompt
-
-    prompt = construct_prompt(prompt_rules.WEB_SEARCH_RULE, web_results, question)
-
     history = state["history"]
-    messages = history + [HumanMessage(content=prompt)]
+    prompt=f"{prompt_rules.WEB_SEARCH_RULE}\n\nWeb results:\n{web_results}"
+    messages = history + [HumanMessage(content=question)]
+
     from main import generate_with_llm_failover
 
-    reply = await generate_with_llm_failover(prompt=prompt, messages_override=messages)
+    reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
     reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"
-    # add a footnote here to indicate from web
+
     return {
         "reply": reply,
         "history": [
