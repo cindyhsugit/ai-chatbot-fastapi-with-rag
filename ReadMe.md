@@ -143,7 +143,7 @@ FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 
 ## ⚡ Performance Benchmark: PyTorch vs. ONNX Runtime
 
-Here is the latency comparison for the cross-encoder reranking step in our RAG pipeline:
+Here is the latency comparison for the cross-encoder reranking step in my RAG pipeline:
 
 | Execution Stage | Pre-ONNX (Standard PyTorch) | Post-ONNX Runtime | Speedup / Improvement |
 | :--- | :--- | :--- | :--- |
