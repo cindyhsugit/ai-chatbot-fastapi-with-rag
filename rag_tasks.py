@@ -12,7 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Local modules
 import embeddings_hf
-import reranker_hf
+import config
 import vectorstore_chroma
 
 import onnxruntime as ort
@@ -37,19 +37,39 @@ onnx_model = ORTModelForSequenceClassification.from_pretrained(
 )
 tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
+
+#  calculate max_length for cross-encoder tokenization 512 is too big for 500 chunk size
+def calculate_max_length(
+    chunk_size: int,
+    chunk_overlap: int,
+    tokenizer,
+    avg_query_tokens: int = 20,
+    safety_margin: float = 1.15,
+) -> int:
+    sample_text = "a" * (chunk_size - 1) + " " + "the quick brown fox jumps " * 20
+    sample_text = sample_text[:chunk_size]
+    sample_tokens = len(tokenizer.encode(sample_text))
+    chars_per_token = chunk_size / sample_tokens
+
+    max_chunk_chars = chunk_size + chunk_overlap
+    max_chunk_tokens = max_chunk_chars / chars_per_token
+    raw_max = max_chunk_tokens + avg_query_tokens
+    return int(raw_max * safety_margin)
+
+
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
+MAX_LENGTH = calculate_max_length(CHUNK_SIZE, CHUNK_OVERLAP, tokenizer)
+print(
+    f"Derived MAX_LENGTH={MAX_LENGTH} from chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}"
+)
+
 # Warm-up: absorb the cold-start cost here instead of on a user's first request
 _ = onnx_model(**tokenizer("warmup query", "warmup passage", return_tensors="pt"))
 
 
 # get_embedding(text: str) -> List[float]:
 def get_embedding(text):
-    # using open AI's embedding model
-    # response = client.embeddings.create(
-    #     model="text-embedding-3-small",
-    #     input=text
-    # )
-    # return_list = response.data[0].embedding
-    # replace with huggingFace embedding module
 
     if not isinstance(text, str) or not text.strip():
         raise ValueError("text must be a non-empty string")
@@ -65,20 +85,7 @@ def retrieve(question, k=20):
     # question_embedding -> [0.0119, -0.0440, 0.0801, ...]   (1536 floats, similar to chunk 0's embedding)
     question_embedding = get_embedding(question)
 
-    # indices -> array([[0, 1, -1]])   <- FAISS returns positions in the index
-    #   0 = chunk 0 ("The sky is blue.") was the closest match
-    #   1 = chunk 1 was second closest
-    #  -1 = "no third result" since we only have 2 chunks stored but asked for k=3
-    # distances -> array([[0.0012, 0.1583, some_huge_or_placeholder_number]])
-    # how far away that vector was from your query vector
-    #  could be useful for debugging or setting a "confidence threshold" — e.g.,
-    # "if even the closest match has a huge distance,
-    #  maybe there's no relevant document at all
     start = time.time()
-
-    # prior FAISS vector storage
-    # distances, indices = index.search(
-    #    np.array([question_embedding]).astype("float32"), k=20) # cast a wider net
 
     retrieved_chunks = vectorstore_chroma.search(
         query_embedding=question_embedding, k=k
@@ -90,34 +97,45 @@ def retrieve(question, k=20):
     return retrieved_chunks
 
 
-def rerank(
-    question: str, retrieved_chunks: list[str], top_k: int = 3
-) -> list[tuple[str, float]]:
-    start = time.time()
-    reranked_chunks = reranker_hf.rerank(
-        question, retrieved_chunks, top_k=3
-    )  # back down to 3 for generation
-    end = time.time()
-    print(f"-- -- Hugging face cross encoder Time: {end-start:.2f}s")
+# def rerank(
+#     question: str, retrieved_chunks: list[str], top_k: int = 3
+# ) -> list[tuple[str, float]]:
+#     start = time.time()
+#     reranked_chunks = reranker_hf.rerank(
+#         question, retrieved_chunks, top_k=3
+#     )  # back down to 3 for generation
+#     end = time.time()
+#     print(f"-- -- Hugging face cross encoder Time: {end-start:.2f}s")
 
-    # now use reranked_chunks (not retrieved_chunks) when building the prompt for generation
-    return reranked_chunks
+#     # now use reranked_chunks (not retrieved_chunks) when building the prompt for generation
+#     return reranked_chunks
 
 
 def rerank_with_onnx(
     query: str, retrieved_chunks: list[str], top_k: int = 3
 ) -> list[tuple[str, float]]:
+
     start = time.time()
+
     # Build pairs [query, candidate]
     pairs = [[query, candidate] for candidate in retrieved_chunks]
+    t_pairs = time.time()
 
     # Tokenize all pairs together efficiently
-    inputs = tokenizer(pairs, padding=True, truncation=True, return_tensors="pt")
+    inputs = tokenizer(
+        pairs, padding=True, truncation=True, max_length=MAX_LENGTH, return_tensors="pt"
+    )
+    t_tokenize = time.time()
+
+    print(
+        f"num chunks: {len(retrieved_chunks)}, input shape: {inputs['input_ids'].shape}"
+    )
 
     # Run inference with the ONNX model
     with torch.no_grad():
         outputs = onnx_model(**inputs)
         scores = outputs.logits.squeeze(-1)  # Extract raw score logits
+    t_forward = time.time()
 
     # Convert scores to a Python list
     score_list = (
@@ -127,8 +145,8 @@ def rerank_with_onnx(
     # Pair with candidates and sort descending
     scored = list(zip(retrieved_chunks, [float(s) for s in score_list]))
     scored.sort(key=lambda x: x[1], reverse=True)
-
     end = time.time()
+
     print(f"-- -- Hugging face cross encoder with onnx Time: {end-start:.2f}s")
 
     return scored[:top_k]
@@ -164,8 +182,8 @@ else:
 
     # initializing chunking style
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=config.CHUNK_SIZE,
+        chunk_overlap=config.CHUNK_SIZE,
     )
 
     start = time.time()
@@ -199,33 +217,6 @@ else:
     print(f"Embedding dimension: {len(embeddings[0])}")  # should print 384
 
     print(f"hugging face embedding Time: {end-start:.2f}s")
-    # list comprehension version
-    # embeddings = [get_embedding(chunk) for chunk in chunks]
-
-    # Build the vector index (do this once, at startup or as a script)
-    # dimension: int = len(embeddings[0])
-    # len(embeddings[0]) = len([0.0123, -0.0456, 0.0788, ...]) = 1536
-    # dimension = 384 for huggingface
-    # dimension = len(embeddings[0])
-
-    # Create an empty FAISS "filing cabinet" sized to hold embeddings
-    # of this exact length. "L2" means it measures similarity using straight-line
-    # distance between two points. "Flat" means it checks every stored item
-    # directly (simple and accurate, fine for small datasets)
-    # index: faiss.IndexFlatL2 = faiss.IndexFlatL2(dimension)
-    # index = faiss.IndexFlatL2(dimension)
-
-    # Convert our list of embeddings into a NumPy array (a faster format
-    # for doing math on lots of numbers), and make sure the numbers are in the
-    # exact number format ("float32") that FAISS requires
-    # Then, file all of them into the index so they're ready to be searched
-    # return None
-    # index: faiss.IndexFlatL2
-    #  np.array(embeddings) turns the Python list-of-lists into:
-    #   array([[0.0123, -0.0456, 0.0788, ...],
-    #          [0.0341,  0.0021, -0.0999, ...]])
-    # (FAISS requires float32 specifically)
-    # index.add(np.array(embeddings).astype("float32"))
 
     chunk_ids = []
     for i in range(len(chunks)):
@@ -240,5 +231,4 @@ else:
     )
     print("Using ChromaDB:", vectorstore_chroma.__name__)
 
-    # print("FAISS:", index.ntotal)
     print("ChromaDB Collection Count:", vectorstore_chroma.collection.count())

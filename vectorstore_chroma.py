@@ -19,6 +19,7 @@ def add_documents(ids, embeddings, documents):
     collection.add(ids=ids, embeddings=embeddings, documents=documents)
     print("Total documents in collection:", collection.count())
 
+
 def search(query_embedding, k=20):
     """
     query_embedding: the embedded user question
@@ -27,5 +28,5 @@ def search(query_embedding, k=20):
     """
     results = collection.query(query_embeddings=[query_embedding], n_results=k)
     # results["documents"][0] is the list of matching texts
-    
+
     return results["documents"][0]

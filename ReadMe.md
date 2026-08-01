@@ -151,6 +151,30 @@ Here is the latency comparison for the cross-encoder reranking step in my RAG pi
 | **Warm Run (Subsequent Requests)** | 0.08s – 0.36s *(Avg ~0.22s)* | **0.07s – 0.08s** *(Avg ~0.075s)* | **Up to 3x–4x faster** |
 | **Execution Jitter** | High variance | Low variance / Flattened | Highly consistent latency |
 
+## Debugging a Latency Regression: Stale Chunk Data
+
+After deploying the ONNX-optimized reranker, a LangSmith trace flagged a rerank_node
+call at 5.68s — far outside the benchmarked range above. Instrumenting the reranking
+function stage-by-stage (tokenization, model forward pass, scoring) isolated the cost
+to the model forward pass itself, not cold start.
+
+Root cause: ChromaDB contained stale chunks from before the current chunking config
+(500 chars / 50 overlap) was set, left behind because prior ingestion runs reused
+sequential IDs without clearing the collection. Two outlier chunks (3,136 and 3,277
+characters — roughly 6-7x the intended size) were inflating the tokenized batch to
+the full 512-token ceiling on every rerank call that retrieved them.
+
+| Stage                          | Forward Pass Time | Input Shape        | Notes                                   |
+|---------------------------------|-------------------|---------------------|------------------------------------------|
+| Before fix                      | 1.072s            | [10, 512] (truncated)| Oversized stale chunks inflating batch  |
+| Interim: max_length=256 cap     | 0.457s            | [10, 256] (truncated)| Masked the symptom, silently dropped content |
+| After: ChromaDB cleared/re-ingested | 0.205s        | [10, 113] (natural)  | Root cause fixed, no truncation needed  |
+
+**Fix:** cleared and re-ingested the ChromaDB collection to remove stale chunks, and
+added a `calculate_max_length()` helper that derives a data-driven `max_length` from
+the actual chunk_size/overlap config and tokenizer at startup, rather than hardcoding
+a guessed value — so this stays correct automatically if chunking config changes.
+
 ## Testing
 This project uses LangSmith to trace every graph run. Each turn's
 inputs/outputs and message history are inspected via the Turns view,
