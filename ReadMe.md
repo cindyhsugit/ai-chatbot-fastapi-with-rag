@@ -140,40 +140,41 @@ FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 `langchain-google-genai`) · ChromaDB · HuggingFace embeddings & cross-encoder
 · OpenAI API · Gemini API · Tavily · Docker · Google Cloud Run· Cursor
 (AI-assisted development)
+## Performance Benchmark: PyTorch vs. ONNX Runtime
 
-## ⚡ Performance Benchmark: PyTorch vs. ONNX Runtime
-
-Here is the latency comparison for the cross-encoder reranking step in my RAG pipeline:
+Latency comparison for the cross-encoder reranking step in the RAG pipeline.
 
 | Execution Stage | Pre-ONNX (Standard PyTorch) | Post-ONNX Runtime | Speedup / Improvement |
-| :--- | :--- | :--- | :--- |
-| **Cold Run (First Request)** | 0.45s | 0.60s | Initial session overhead |
-| **Warm Run (Subsequent Requests)** | 0.08s – 0.36s *(Avg ~0.22s)* | **0.07s – 0.08s** *(Avg ~0.075s)* | **Up to 3x–4x faster** |
-| **Execution Jitter** | High variance | Low variance / Flattened | Highly consistent latency |
+|---|---|---|---|
+| Cold Run (First Request) | 0.45s | 0.60s | Initial session overhead |
+| Warm Run (Subsequent Requests) | 0.08s – 0.36s (avg ~0.22s) | 0.07s – 0.08s (avg ~0.075s) | Up to 3x–4x faster |
+| Execution Jitter | High variance | Low variance / flattened | Highly consistent latency |
 
 ## Debugging a Latency Regression: Stale Chunk Data
 
-After deploying the ONNX-optimized reranker, a LangSmith trace flagged a rerank_node
-call at 5.68s — far outside the benchmarked range above. Instrumenting the reranking
-function stage-by-stage (tokenization, model forward pass, scoring) isolated the cost
-to the model forward pass itself, not cold start.
+After deploying the ONNX-optimized reranker, a LangSmith trace flagged a `rerank_node` call at 5.68s — far outside the benchmarked range above. Instrumenting the reranking function stage-by-stage (tokenization, model forward pass, scoring) isolated the cost to the model forward pass itself, not cold start.
 
-Root cause: ChromaDB contained stale chunks from before the current chunking config
-(500 chars / 50 overlap) was set, left behind because prior ingestion runs reused
-sequential IDs without clearing the collection. Two outlier chunks (3,136 and 3,277
-characters — roughly 6-7x the intended size) were inflating the tokenized batch to
-the full 512-token ceiling on every rerank call that retrieved them.
+**Root cause:** ChromaDB contained stale chunks left over from before the current chunking config (500 chars / 50 overlap) was set, because prior ingestion runs reused sequential IDs without clearing the collection. Two outlier chunks (3,136 and 3,277 characters — roughly 6–7x the intended chunk size) were inflating the tokenized batch to the full 512-token ceiling on every rerank call that retrieved them.
 
-| Stage                          | Forward Pass Time | Input Shape        | Notes                                   |
-|---------------------------------|-------------------|---------------------|------------------------------------------|
-| Before fix                      | 1.072s            | [10, 512] (truncated)| Oversized stale chunks inflating batch  |
-| Interim: max_length=256 cap     | 0.457s            | [10, 256] (truncated)| Masked the symptom, silently dropped content |
-| After: ChromaDB cleared/re-ingested | 0.205s        | [10, 113] (natural)  | Root cause fixed, no truncation needed  |
+| Stage | Forward Pass Time | Input Shape | Notes |
+|---|---|---|---|
+| Before fix | 1.072s | [10, 512] (truncated) | Oversized stale chunks inflating batch |
+| Interim: `max_length=256` cap | 0.457s | [10, 256] (truncated) | Masked the symptom — silently dropped content |
+| After: ChromaDB cleared/re-ingested | 0.205s | [10, 113] (natural) | Root cause fixed, no truncation needed |
 
-**Fix:** cleared and re-ingested the ChromaDB collection to remove stale chunks, and
-added a `calculate_max_length()` helper that derives a data-driven `max_length` from
-the actual chunk_size/overlap config and tokenizer at startup, rather than hardcoding
-a guessed value — so this stays correct automatically if chunking config changes.
+**Fix:** Cleared and re-ingested the ChromaDB collection to remove the stale chunks. Also replaced the interim `max_length=256` guess with `calculate_max_length()` — a startup helper that derives `max_length` from the tokenizer's actual chars-per-token ratio against the real `chunk_size`/`chunk_overlap` config, so the value stays correct automatically if chunking config ever changes, instead of relying on a hardcoded guess.
+
+## Production Verification
+
+After the fix, three consecutive live requests (real queries, real ChromaDB retrieval, real reranking) confirmed the fix holds under normal traffic, not just in isolated testing:
+
+| Request | Input Shape | Forward Pass | Full Rerank Step | LangGraph Total |
+|---|---|---|---|---|
+| 1 | [10, 113] | 0.196s | 0.20s | 1.29s |
+| 2 | [10, 94] | 0.155s | 0.16s | 1.12s |
+| 3 | [10, 109] | 0.180s | 0.18s | 1.10s |
+
+`MAX_LENGTH` was derived automatically at startup as `165` (from `chunk_size=500`, `chunk_overlap=50`), and all three requests stayed comfortably under that ceiling with no truncation — reranking now accounts for a small, consistent fraction of total pipeline latency, with the OpenAI generation call as the dominant remaining cost.
 
 ## Testing
 This project uses LangSmith to trace every graph run. Each turn's

@@ -46,19 +46,25 @@ def test_rerank_edge_case_all_irrelevant_candidates():
     assert len(result) == 2  # returns both, even though neither is relevant
 
 
-def test_rag_tasks_rerank_wrapper_calls_hf_rerank_and_returns_result():
-    query = "What is Homer Simpson's favorite food?"
-    candidates = [
-        "The weather in Springfield is often sunny.",
-        "Homer Simpson's favorite food is broccoli casserole.",
-    ]
-    expected = [("Homer Simpson's favorite food is broccoli casserole.", 0.9)]
+def test_calculate_max_length_uses_chunk_size_overlap_and_query_margin():
+    class DummyTokenizer:
+        def encode(self, text):
+            return text.split()
 
-    with patch("rag_tasks.reranker_hf.rerank", return_value=expected) as mock_rerank:
-        result = rag_tasks.rerank(query, candidates, top_k=2)
+    chunk_size = 500
+    chunk_overlap = 50
+    sample_text = "The quick brown fox jumps over the lazy dog. " * 15
+    sample_tokens = len(sample_text.split())
+    chars_per_token = len(sample_text) / sample_tokens
+    expected = int(((chunk_size + chunk_overlap) / chars_per_token + 20) * 1.15)
+
+    result = rag_tasks.calculate_max_length(
+        chunk_size,
+        chunk_overlap,
+        DummyTokenizer(),
+    )
 
     assert result == expected
-    mock_rerank.assert_called_once_with(query, candidates, top_k=3)
 
 
 def test_rerank_with_onnx_returns_top_result_first_for_tensor_logits():
@@ -69,10 +75,17 @@ def test_rerank_with_onnx_returns_top_result_first_for_tensor_logits():
     ]
 
     class DummyTokenizer:
-        def __call__(self, pairs, padding=True, truncation=True, return_tensors="pt"):
+        def __call__(
+            self,
+            pairs,
+            padding=True,
+            truncation=True,
+            max_length=None,
+            return_tensors="pt",
+        ):
             return {
-                "input_ids": [[1, 2], [3, 4]],
-                "attention_mask": [[1, 1], [1, 1]],
+                "input_ids": SimpleNamespace(shape=(2, 2)),
+                "attention_mask": SimpleNamespace(shape=(2, 2)),
             }
 
     class DummyOnnxModel:
@@ -99,10 +112,17 @@ def test_rerank_with_onnx_numpy_scores_fallback_raises():
     ]
 
     class DummyTokenizer:
-        def __call__(self, pairs, padding=True, truncation=True, return_tensors="pt"):
+        def __call__(
+            self,
+            pairs,
+            padding=True,
+            truncation=True,
+            max_length=None,
+            return_tensors="pt",
+        ):
             return {
-                "input_ids": [[1, 2], [3, 4]],
-                "attention_mask": [[1, 1], [1, 1]],
+                "input_ids": SimpleNamespace(shape=(2, 2)),
+                "attention_mask": SimpleNamespace(shape=(2, 2)),
             }
 
     class DummyOnnxModel:
@@ -112,5 +132,5 @@ def test_rerank_with_onnx_numpy_scores_fallback_raises():
     with patch.object(rag_tasks, "tokenizer", DummyTokenizer()), patch.object(
         rag_tasks, "onnx_model", DummyOnnxModel()
     ):
-        with pytest.raises(ValueError, match="only convert an array of size 1"):
+        with pytest.raises(ValueError, match="can only convert an array of size 1"):
             rag_tasks.rerank_with_onnx(query, candidates, top_k=1)

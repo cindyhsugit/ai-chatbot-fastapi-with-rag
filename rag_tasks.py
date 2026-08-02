@@ -46,22 +46,22 @@ def calculate_max_length(
     avg_query_tokens: int = 20,
     safety_margin: float = 1.15,
 ) -> int:
-    sample_text = "a" * (chunk_size - 1) + " " + "the quick brown fox jumps " * 20
-    sample_text = sample_text[:chunk_size]
+    # Use a realistic text sample to measure characters-per-token for this specific tokenizer
+    sample_text = "The quick brown fox jumps over the lazy dog. " * 15
     sample_tokens = len(tokenizer.encode(sample_text))
-    chars_per_token = chunk_size / sample_tokens
+    chars_per_token = len(sample_text) / sample_tokens
 
+    # Max possible chunk size including overlap
     max_chunk_chars = chunk_size + chunk_overlap
     max_chunk_tokens = max_chunk_chars / chars_per_token
+    # Add query tokens and apply safety margin
     raw_max = max_chunk_tokens + avg_query_tokens
     return int(raw_max * safety_margin)
 
 
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 50
-MAX_LENGTH = calculate_max_length(CHUNK_SIZE, CHUNK_OVERLAP, tokenizer)
+MAX_LENGTH = calculate_max_length(config.CHUNK_SIZE, config.CHUNK_OVERLAP, tokenizer)
 print(
-    f"Derived MAX_LENGTH={MAX_LENGTH} from chunk_size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP}"
+    f"Derived MAX_LENGTH={MAX_LENGTH} from chunk_size={config.CHUNK_SIZE}, overlap={config.CHUNK_OVERLAP}"
 )
 
 # Warm-up: absorb the cold-start cost here instead of on a user's first request
@@ -119,23 +119,22 @@ def rerank_with_onnx(
 
     # Build pairs [query, candidate]
     pairs = [[query, candidate] for candidate in retrieved_chunks]
-    t_pairs = time.time()
 
+    #fmt:off
     # Tokenize all pairs together efficiently
     inputs = tokenizer(
-        pairs, padding=True, truncation=True, max_length=MAX_LENGTH, return_tensors="pt"
+        pairs, 
+        padding=True, 
+        truncation=True, 
+        max_length=MAX_LENGTH, # defaults to the model's absolute maximum architectural limit (usually 512 tokens), forcing the ONNX runtime to compute heavy, wasteful self-attention matrices across empty padding space. Capping it at MAX_LENGTH keeps your input tensor shapes tight (e.g., [10, 113]) and keeps CPU inference lightning fast.
+        return_tensors="pt"
     )
-    t_tokenize = time.time()
-
-    print(
-        f"num chunks: {len(retrieved_chunks)}, input shape: {inputs['input_ids'].shape}"
-    )
+    #fmt:on
 
     # Run inference with the ONNX model
     with torch.no_grad():
         outputs = onnx_model(**inputs)
         scores = outputs.logits.squeeze(-1)  # Extract raw score logits
-    t_forward = time.time()
 
     # Convert scores to a Python list
     score_list = (
@@ -146,7 +145,6 @@ def rerank_with_onnx(
     scored = list(zip(retrieved_chunks, [float(s) for s in score_list]))
     scored.sort(key=lambda x: x[1], reverse=True)
     end = time.time()
-
     print(f"-- -- Hugging face cross encoder with onnx Time: {end-start:.2f}s")
 
     return scored[:top_k]
