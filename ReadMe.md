@@ -191,6 +191,39 @@ coverage across the codebase** (792 statements, 72 tests). Run with:
 pytest --cov
 ```
 
+## Evaluation
+
+Beyond tracing, this project uses [LangSmith's evaluation framework](https://docs.smith.langchain.com/evaluation)
+to score the compiled graph against curated datasets rather than relying on
+manual spot-checks.
+
+- **`correctness_evaluator`** — LLM-as-judge, scores whether the generated
+  answer matches a reference answer semantically (not exact string match),
+  run against both single-turn and multi-turn datasets
+- **`turn_attribution_evaluator`** — multi-turn only; checks the model
+  answered the *current* question rather than drifting back to an earlier
+  one in the conversation, directly regression-testing the flattened-message
+  bug fix described above
+- **`retrieval_relevance_evaluator`** — grades the retrieved/reranked chunks
+  themselves against the question, independent of the final answer
+
+Separating retrieval-quality from generation-quality scoring matters because
+they can diverge in informative ways: relevant chunks with a wrong answer
+point at a generation/prompting bug, while a correct answer built on
+irrelevant chunks means the model got lucky from its own trained knowledge
+rather than actually grounding in retrieved context — the two failure modes
+need different fixes.
+
+```bash
+python evaluation/eval_single_turn.py
+python evaluation/eval_multi_turn.py
+python evaluation/eval_retrieval.py
+```
+
+**Known limitation:** dataset size is currently small (~13 single-turn, ~9
+multi-turn examples) and there's no dedicated groundedness/faithfulness
+evaluator yet — the next addition would check that generated answers are
+actually supported by the retrieved context, not just correct by coincidence.
 
 ## Running locally
 
