@@ -24,9 +24,13 @@ openai_client = OpenAI()
 compiled_graph = build_graph()
 
 # 1. Dataset — from shared datasets.py
+#fmt:off
 dataset = get_or_create_dataset(
-    client, name="rag-eval-multi-turn", examples=MULTI_TURN_EXAMPLES, recreate=True
+    client, name="rag-eval-multi-turn", 
+    examples=MULTI_TURN_EXAMPLES, 
+    recreate=True
 )
+#fmt:on
 
 
 # 2. Target — history passed through, NOT hardcoded to []

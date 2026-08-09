@@ -24,9 +24,13 @@ openai_client = OpenAI()
 compiled_graph = build_graph()
 
 # 1. Dataset
+#fmt:off
 dataset = get_or_create_dataset(
-    client, name="rag-eval-single-turn", examples=SINGLE_TURN_EXAMPLES, recreate=True
+    client, name="rag-eval-single-turn", 
+    examples=SINGLE_TURN_EXAMPLES, 
+    recreate=True
 )
+#fmt:on
 
 
 # 2. Target — calls your REAL LangGraph pipeline, not a bare prompt
@@ -41,7 +45,10 @@ def target(inputs: dict) -> dict:
         "reply": "",
     }
     result = asyncio.run(compiled_graph.ainvoke(initial_state))
-    return {"answer": result["reply"]}
+    return {
+        "answer": result["reply"],
+        "reranked_chunks": result["reranked_chunks"],
+    }
 
 
 # 3. Run

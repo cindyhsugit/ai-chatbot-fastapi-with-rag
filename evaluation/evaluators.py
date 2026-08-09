@@ -91,3 +91,46 @@ or missed part of the current one)."""
         score = 0
 
     return {"key": "turn_attribution", "score": score}
+
+
+def retrieval_relevance_evaluator(run, example) -> dict:
+    """
+    LLM-as-judge: checks whether the reranked chunks retrieved for this
+    query are actually relevant to the question, independent of what the
+    generation step did with them. Isolates retrieval/reranker bugs from
+    generation/prompting bugs.
+    """
+    reranked_chunks = run.outputs.get("reranked_chunks", [])
+    question = example.inputs["question"]
+
+    if not reranked_chunks:
+        # No chunks retrieved at all (or this run went through web_search_node,
+        # which bypasses retrieval entirely) - nothing for the retriever to be
+        # graded on.
+        return {"key": "retrieval_relevance", "score": None}
+
+    doc_string = "\n\n".join(chunk_text for chunk_text, _ in reranked_chunks)
+
+    prompt = f"""Question: {question}
+Retrieved documents:
+{doc_string}
+
+Do these retrieved documents contain information relevant to answering
+the question? Score as relevant (1) if the documents contain information
+that could reasonably help answer the question, even partially. Score as
+not relevant (0) if the documents are off-topic or contain nothing useful
+for answering this specific question.
+
+Respond with only "1" or "0"."""
+
+    result = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = result.choices[0].message.content.strip()
+    try:
+        score = int(raw)
+    except ValueError:
+        print(f"Unexpected judge output: {raw!r}")
+        score = 0
+    return {"key": "retrieval_relevance", "score": score}

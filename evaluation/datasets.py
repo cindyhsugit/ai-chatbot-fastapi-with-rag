@@ -67,6 +67,32 @@ SINGLE_TURN_EXAMPLES = [
         "inputs": {"question": "Who is Lisa Simpson?"},
         "outputs": {"answer": "Lisa Simpson is the middle child of the Simpson family"},
     },
+    {
+        "inputs": {"question": "What food does Homer love the most?"},
+        "outputs": {"answer": "broccoli casserole"},
+    },
+    {
+        "inputs": {"question": "Who created the Simpsons?"},
+        "outputs": {"answer": "Matt Groening"},
+    },
+    {
+        "inputs": {"question": "What is Bart Simpson's relation to Homer?"},
+        "outputs": {"answer": "Bart is Homer's son, the eldest child"},
+    },
+    {
+        "inputs": {"question": "What is Homer Simpson's blood type?"},
+        "outputs": {
+            "answer": "The context does not provide information about Homer's blood type."
+        },
+    },
+    {
+        "inputs": {"question": "What is the tallest mountain in the world?"},
+        "outputs": {"answer": "Mount Everest"},
+    },
+    {
+        "inputs": {"question": "Who wrote Romeo and Juliet?"},
+        "outputs": {"answer": "William Shakespeare"},
+    },
 ]
 
 # --- Multi-turn examples ---
@@ -166,5 +192,70 @@ MULTI_TURN_EXAMPLES = [
         "outputs": {
             "answer": "Homer is lazy/impulsive but loving; Bart is mischievous/rebellious; show created by Matt Groening; Homer's favorite food is broccoli casserole"
         },
+    },
+    {
+        # Tests: multi-hop reasoning across two separate prior facts
+        # (Bart = Homer's eldest child, Maggie = youngest Simpson child)
+        # to answer an implicit relational question without either fact
+        # being restated in the current turn
+        "inputs": {
+            "question": "who is Homer's youngest child",
+            "history": [
+                {"role": "user", "content": "Who is Lisa Simpson?"},
+                {
+                    "role": "assistant",
+                    "content": "Lisa Simpson is the middle child of the Simpson family, portrayed as intelligent, thoughtful, and morally serious.",
+                },
+                {
+                    "role": "user",
+                    "content": "What is Bart Simpson's relation to Homer?",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Bart is Homer's son, the eldest child.",
+                },
+            ],
+        },
+        "outputs": {"answer": "Maggie Simpson"},
+    },
+    {
+        # Tests: compound question mixing a local-context part (family
+        # relation, requires resolving "her" from prior turn) with a
+        # general-knowledge part (Shakespeare) — checks both halves get
+        # answered and neither gets dropped or misrouted
+        "inputs": {
+            "question": "who is her younger sibling, and who wrote Romeo and Juliet?",
+            "history": [
+                {"role": "user", "content": "Who is Lisa Simpson?"},
+                {
+                    "role": "assistant",
+                    "content": "Lisa Simpson is the middle child of the Simpson family, portrayed as intelligent, thoughtful, and morally serious.",
+                },
+            ],
+        },
+        "outputs": {
+            "answer": "Maggie Simpson is Lisa's younger sibling; Romeo and Juliet was written by William Shakespeare"
+        },
+    },
+    {
+        # Tests: after SEVERAL consecutive web-search-fallback turns (no local
+        # context), does the next question correctly route back to local
+        # retrieval instead of getting "stuck" defaulting to web search, and
+        # does the long off-topic history cause any drift in the answer?
+        "inputs": {
+            "question": "What is Homer Simpson's favorite food?",
+            "history": [
+                {"role": "user", "content": "What's the capital of Mongolia?"},
+                {"role": "assistant", "content": "Ulaanbaatar"},
+                {"role": "user", "content": "Who wrote Romeo and Juliet?"},
+                {"role": "assistant", "content": "William Shakespeare"},
+                {
+                    "role": "user",
+                    "content": "What is the tallest mountain in the world?",
+                },
+                {"role": "assistant", "content": "Mount Everest"},
+            ],
+        },
+        "outputs": {"answer": "broccoli casserole"},
     },
 ]
