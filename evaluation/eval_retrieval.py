@@ -12,7 +12,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from graph_builder import build_graph
+from app.text_rag.graph_builder import build_graph
 from evaluation.datasets import get_or_create_dataset, SINGLE_TURN_EXAMPLES
 from evaluation.evaluators import retrieval_relevance_evaluator
 

@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import patch
-import rag_tasks
-import reranker_hf
-import graph_builder
-import main
+import app.text_rag.rag_tasks as rag_tasks
+import app.text_rag.reranker_hf as reranker_hf
+import app.text_rag.graph_builder as graph_builder
+import app.main as main
 
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -143,12 +143,15 @@ async def test_web_search_node_happy_path():
         "history": [],
     }
 
-    with patch(
-        "web_search_provider.web_search_fallback",
-        return_value="Today's weather is sunny with a high of 75F.",
-    ), patch(
-        "main.generate_with_llm_failover",
-        return_value="It's sunny with a high of 75F today.",
+    with (
+        patch(
+            "web_search_provider.web_search_fallback",
+            return_value="Today's weather is sunny with a high of 75F.",
+        ),
+        patch(
+            "main.generate_with_llm_failover",
+            return_value="It's sunny with a high of 75F today.",
+        ),
     ):
         result = await graph_builder.web_search_node(state)
     assert result["reply"] == (

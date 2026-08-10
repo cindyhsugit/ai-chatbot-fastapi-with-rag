@@ -1,6 +1,6 @@
-from reranker_hf import rerank
+from app.text_rag.reranker_hf import rerank
 import pytest
-import rag_tasks
+import app.text_rag.rag_tasks as rag_tasks
 import torch
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -92,8 +92,9 @@ def test_rerank_with_onnx_returns_top_result_first_for_tensor_logits():
         def __call__(self, **inputs):
             return SimpleNamespace(logits=torch.tensor([[0.2], [0.8]]))
 
-    with patch.object(rag_tasks, "tokenizer", DummyTokenizer()), patch.object(
-        rag_tasks, "onnx_model", DummyOnnxModel()
+    with (
+        patch.object(rag_tasks, "tokenizer", DummyTokenizer()),
+        patch.object(rag_tasks, "onnx_model", DummyOnnxModel()),
     ):
         result = rag_tasks.rerank_with_onnx(query, candidates, top_k=2)
 
@@ -129,8 +130,9 @@ def test_rerank_with_onnx_numpy_scores_fallback_raises():
         def __call__(self, **inputs):
             return SimpleNamespace(logits=np.array([[0.2], [0.8]]))
 
-    with patch.object(rag_tasks, "tokenizer", DummyTokenizer()), patch.object(
-        rag_tasks, "onnx_model", DummyOnnxModel()
+    with (
+        patch.object(rag_tasks, "tokenizer", DummyTokenizer()),
+        patch.object(rag_tasks, "onnx_model", DummyOnnxModel()),
     ):
         with pytest.raises(ValueError, match="can only convert an array of size 1"):
             rag_tasks.rerank_with_onnx(query, candidates, top_k=1)

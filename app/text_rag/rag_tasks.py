@@ -13,11 +13,11 @@ from langchain_experimental.text_splitter import SemanticChunker
 from langchain_openai import OpenAIEmbeddings
 
 # Local modules
-import embeddings_hf
-import config
-import vectorstore_chroma
-import semantic_chunk
-import utility.file_io
+import app.text_rag.embeddings_hf as embeddings_hf
+import app.config as config
+from app.text_rag import vectorstore_chroma
+import app.text_rag.semantic_chunk as semantic_chunk
+import app.utility.file_io
 
 # Setup
 load_dotenv()
@@ -50,7 +50,7 @@ if __name__ == "__main__":
 else:
     # Loading
     filepath = os.getenv("INPUT_FILE")
-    loaded_text = utility.file_io.safely_open_input_file(filepath)
+    loaded_text = app.utility.file_io.safely_open_input_file(filepath)
 
     # Chunking
     chunks = semantic_chunk.split(loaded_text)

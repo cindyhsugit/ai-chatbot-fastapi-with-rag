@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 from langgraph.graph import StateGraph
 
-import graph_builder
+import app.text_rag.graph_builder as graph_builder
 
 
 def test_node_wired_into_graph():
@@ -14,9 +14,12 @@ def test_node_wired_into_graph():
     graph.set_finish_point("rerank_node")
     compiled = graph.compile()
 
-    with patch(
-        "graph_builder.rag_tasks.retrieve", return_value=[("chunk", 0.5)]
-    ), patch("graph_builder.rag_tasks.rerank_with_onnx", return_value=[("chunk", 0.5)]):
+    with (
+        patch("graph_builder.rag_tasks.retrieve", return_value=[("chunk", 0.5)]),
+        patch(
+            "graph_builder.rag_tasks.rerank_with_onnx", return_value=[("chunk", 0.5)]
+        ),
+    ):
         result = compiled.invoke({"question": "what is the refund policy?"})
 
     assert "score" in result
@@ -43,13 +46,16 @@ async def test_graph_routes_low_score_to_web_search():
     graph.set_entry_point("retrieve_node")
     compiled = graph.compile()
 
-    with patch(
-        "graph_builder.rag_tasks.retrieve", return_value=[("irrelevant chunk", -5.0)]
-    ), patch(
-        "graph_builder.rag_tasks.rerank_with_onnx",
-        return_value=[("irrelevant chunk", -5.0)],
-    ), patch(
-        "main.generate_with_llm_failover", return_value="Some answer"
+    with (
+        patch(
+            "graph_builder.rag_tasks.retrieve",
+            return_value=[("irrelevant chunk", -5.0)],
+        ),
+        patch(
+            "graph_builder.rag_tasks.rerank_with_onnx",
+            return_value=[("irrelevant chunk", -5.0)],
+        ),
+        patch("main.generate_with_llm_failover", return_value="Some answer"),
     ):
         result = await compiled.ainvoke({"question": "some question", "history": []})
 
@@ -142,18 +148,23 @@ async def test_full_graph_routes_to_web_search_on_no_knowledge():
         "history": [],
     }
 
-    with patch(
-        "graph_builder.rag_tasks.retrieve",
-        return_value=[("irrelevant chunk", -5.0)],
-    ), patch(
-        "graph_builder.rag_tasks.rerank_with_onnx",
-        return_value=[("irrelevant chunk", -5.0)],
-    ), patch(
-        "web_search_provider.web_search_fallback",
-        return_value="Some fact found via web search.",
-    ), patch(
-        "main.generate_with_llm_failover",
-        return_value="Homer's cholesterol level was mentioned as high in that episode.",
+    with (
+        patch(
+            "graph_builder.rag_tasks.retrieve",
+            return_value=[("irrelevant chunk", -5.0)],
+        ),
+        patch(
+            "graph_builder.rag_tasks.rerank_with_onnx",
+            return_value=[("irrelevant chunk", -5.0)],
+        ),
+        patch(
+            "web_search_provider.web_search_fallback",
+            return_value="Some fact found via web search.",
+        ),
+        patch(
+            "main.generate_with_llm_failover",
+            return_value="Homer's cholesterol level was mentioned as high in that episode.",
+        ),
     ):
         result = await compiled.ainvoke(initial_state)
 
@@ -202,15 +213,19 @@ async def test_full_graph_end_to_end_with_context():
         "history": [],
     }
 
-    with patch(
-        "graph_builder.rag_tasks.retrieve",
-        return_value=[("Homer loves donuts.", 0.5)],
-    ), patch(
-        "graph_builder.rag_tasks.rerank_with_onnx",
-        return_value=[("Homer loves donuts.", 0.9)],
-    ), patch(
-        "main.generate_with_llm_failover",
-        return_value="Homer's favorite food is donuts.",
+    with (
+        patch(
+            "graph_builder.rag_tasks.retrieve",
+            return_value=[("Homer loves donuts.", 0.5)],
+        ),
+        patch(
+            "graph_builder.rag_tasks.rerank_with_onnx",
+            return_value=[("Homer loves donuts.", 0.9)],
+        ),
+        patch(
+            "main.generate_with_llm_failover",
+            return_value="Homer's favorite food is donuts.",
+        ),
     ):
         result = await compiled.ainvoke(initial_state)
 
@@ -256,15 +271,19 @@ async def test_full_graph_end_to_end_without_context():
         "history": [],
     }
 
-    with patch(
-        "graph_builder.rag_tasks.retrieve",
-        return_value=[("irrelevant chunk", -5.0)],
-    ), patch(
-        "graph_builder.rag_tasks.rerank_with_onnx",
-        return_value=[("irrelevant chunk", -5.0)],
-    ), patch(
-        "main.generate_with_llm_failover",
-        return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
+    with (
+        patch(
+            "graph_builder.rag_tasks.retrieve",
+            return_value=[("irrelevant chunk", -5.0)],
+        ),
+        patch(
+            "graph_builder.rag_tasks.rerank_with_onnx",
+            return_value=[("irrelevant chunk", -5.0)],
+        ),
+        patch(
+            "main.generate_with_llm_failover",
+            return_value="Homer's family includes Marge, Bart, Lisa, and Maggie.",
+        ),
     ):
         result = await compiled.ainvoke(initial_state)
 

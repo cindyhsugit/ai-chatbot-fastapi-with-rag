@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 import pytest
-from main import app
+from app.main import app
 import requests
 from langchain_core.messages import HumanMessage
 

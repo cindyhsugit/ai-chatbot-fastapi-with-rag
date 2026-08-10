@@ -7,22 +7,26 @@ If call #2 is consistently faster than call #1, it's a warm-up effect
 """
 
 import time
-from reranker_hf import rerank                  
-import vectorstore_chroma as VectorStore_Chroma
-from rag_tasks import get_embedding  # replace with wherever get_embedding lives
+from app.text_rag.reranker_hf import rerank
+import app.text_rag.vectorstore_chroma as VectorStore_Chroma
+from app.text_rag.rag_tasks import (
+    get_embedding,
+)  # replace with wherever get_embedding lives
 
 # Use the SAME question and SAME retrieved chunks for both calls,
 # so the only variable is "which call number is this" (1st vs 2nd).
 question = "what's homer's favorite food?"
 
 # Pull real top-20 chunks once, reuse for both timed calls
-question_embedding = get_embedding(question) # however you currently generate this embedding
-retrieved_chunks = VectorStore_Chroma.search(
-    query_embedding=question_embedding, k=20
-)
+question_embedding = get_embedding(
+    question
+)  # however you currently generate this embedding
+retrieved_chunks = VectorStore_Chroma.search(query_embedding=question_embedding, k=20)
 
 print(f"Chunks retrieved: {len(retrieved_chunks)}")
-print(f"Avg chunk length (chars): {sum(len(c) for c in retrieved_chunks) / len(retrieved_chunks):.0f}")
+print(
+    f"Avg chunk length (chars): {sum(len(c) for c in retrieved_chunks) / len(retrieved_chunks):.0f}"
+)
 
 # --- Call 1 ---
 start = time.time()

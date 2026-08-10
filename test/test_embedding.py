@@ -1,7 +1,8 @@
-import rag_tasks 
+import app.text_rag.rag_tasks as rag_tasks
 import numpy as np
 import pytest
 from unittest.mock import patch, MagicMock
+
 
 # test 1 happy path
 def test_get_embedding_happy_path():
@@ -10,6 +11,7 @@ def test_get_embedding_happy_path():
     assert len(result) == 384
     assert all(isinstance(x, float) for x in result)
 
+
 def test_get_embedding_whitespace_input_raises():
     with pytest.raises(ValueError, match="non-empty string"):
         rag_tasks.get_embedding(" ")
@@ -17,7 +19,8 @@ def test_get_embedding_whitespace_input_raises():
 
 def test_get_embedding_none_input_raises():
     with pytest.raises(ValueError, match="non-empty string"):
-        rag_tasks.get_embedding(None)    
+        rag_tasks.get_embedding(None)
+
 
 # Unit test — mocks HF, tests only your logic
 def test_get_embedding_calls_hf_correctly():

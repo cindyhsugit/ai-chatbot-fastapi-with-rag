@@ -14,7 +14,7 @@ load_dotenv(os.path.join(project_root, "apiKey.env"))
 
 import asyncio
 from langchain_core.messages import HumanMessage, AIMessage
-from providers import openai_provider
+from app.providers import openai_provider
 
 
 async def main():

@@ -13,7 +13,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Update this import to match your actual filename (the file containing build_graph)
-from graph_builder import build_graph
+from app.text_rag.graph_builder import build_graph
 from evaluation.datasets import get_or_create_dataset, MULTI_TURN_EXAMPLES
 from evaluation.evaluators import correctness_evaluator, turn_attribution_evaluator
 

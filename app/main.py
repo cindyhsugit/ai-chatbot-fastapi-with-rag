@@ -1,20 +1,13 @@
 # Standard library
-# reads environment variables
 import os
 import time
 import logging
 
 # Third-party: FastAPI
 from fastapi import FastAPI, HTTPException, Request
-
-# some route will return HTML, not JSON
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-
-# serving files like CSS, JavaScript, and images from a static folder
 from fastapi.staticfiles import StaticFiles
-
-# define the shape of data coming into and going out of your API
 from pydantic import BaseModel
 
 # Third-party: Langgraph / LangChain
@@ -23,18 +16,15 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 # Local modules
-# loads secrets from a .env file
 from dotenv import load_dotenv
-from logging_config import setup_logging
-
-# helps build file paths safely.
+from app.logging_config import setup_logging
 from pathlib import Path
-import providers.openai_provider, providers.gemini_provider
-import web_search_provider
-import prompt_rules
-import graph_builder
-import rag_tasks
-import utility
+from app.providers import openai_provider, gemini_provider
+from app.providers import web_search_provider
+from app.text_rag import prompt_rules
+from app.text_rag import graph_builder
+from app.text_rag import rag_tasks
+from app.utility import file_io, chunks_utils, unify_response_content
 
 # setup
 load_dotenv("apiKey.env")
@@ -50,14 +40,11 @@ logger.setLevel(logging.INFO)
 # creates the actual web app
 app = FastAPI()
 
-checkpointer = MemorySaver()
-graph = graph_builder.build_graph(checkpointer=checkpointer)
-
 # This finds the folder where main.py lives
 BASE_DIR = Path(__file__).resolve().parent
 
 # When the browser asks for /static/..., serve files from the static folder
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 #  tells FastAPI where the HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -78,9 +65,7 @@ class ChatResponse(BaseModel):
 
 
 # use langgraph built in fallbacks methods
-backup_llm = providers.openai_provider.openai_llm.with_fallbacks(
-    [providers.gemini_provider.gemini_llm]
-)
+backup_llm = openai_provider.openai_llm.with_fallbacks([gemini_provider.gemini_llm])
 
 
 # home page route
@@ -111,7 +96,7 @@ async def generate_with_llm_failover(
     response = await backup_llm.ainvoke(full_messages)
 
     # open ai and gemini returns different response structure
-    return utility.unify_response_content.to_text(response.content)
+    return unify_response_content.to_text(response.content)
 
 
 # a tiny check route. If it returns {"status": "ok"}, the server is alive.
@@ -162,6 +147,9 @@ async def langgraphchat(request: ChatRequest):
 
     return {"reply": result["reply"]}
 
+
+checkpointer = MemorySaver()
+graph = graph_builder.build_graph(checkpointer=checkpointer)
 
 # run main.py directly, start the server on your computer at port 8000
 if __name__ == "__main__":

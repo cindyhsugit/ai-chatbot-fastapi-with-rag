@@ -9,11 +9,11 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph.message import add_messages
 
 # Local modules
-import rag_tasks
-import prompt_rules
-import web_search_provider
-import reranker_hf
-import config
+from app.text_rag import rag_tasks
+from app.text_rag import prompt_rules
+from app.providers import web_search_provider
+from app.text_rag import reranker_hf
+from app import config
 
 # Setup
 load_dotenv()
@@ -85,7 +85,7 @@ async def generate_with_context_node(state: ChatState) -> dict:
     # 2. Construct clean message history with system instructions at the root
     messages = history + [HumanMessage(content=question)]
 
-    from main import generate_with_llm_failover
+    from app.main import generate_with_llm_failover
 
     # 3. Pass prompt and message over to generate
     reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
@@ -109,7 +109,7 @@ async def generate_without_context_node(state: ChatState) -> dict:
 
     messages = history + [HumanMessage(content=question)]
 
-    from main import generate_with_llm_failover
+    from app.main import generate_with_llm_failover
 
     reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
 
@@ -135,7 +135,7 @@ async def web_search_node(state: ChatState) -> dict:
     prompt = f"{prompt_rules.WEB_SEARCH_RULE}\n\nWeb results:\n{web_results}"
     messages = history + [HumanMessage(content=question)]
 
-    from main import generate_with_llm_failover
+    from app.main import generate_with_llm_failover
 
     reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
     reply = f"{reply}\n\n(Note: answer sourced from live web search, not local knowledge base.)"

@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-WORKDIR /app
+WORKDIR /docker_app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
@@ -10,4 +10,4 @@ RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncod
 COPY . .
 
 EXPOSE 8080
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]

@@ -1,6 +1,6 @@
 import time
 import asyncio
-from providers.gemini_provider import (
+from app.providers.gemini_provider import (
     generate_answer_gemini,
 )  # adjust if your file/function names differ
 

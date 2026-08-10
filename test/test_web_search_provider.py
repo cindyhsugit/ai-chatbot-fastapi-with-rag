@@ -1,10 +1,10 @@
 from unittest.mock import patch, MagicMock
 import asyncio
 import pytest
-import web_search_provider
+import app.providers.web_search_provider as web_search_provider
 from unittest.mock import AsyncMock
-from graph_builder import web_search_node
-import prompt_rules
+from app.text_rag.graph_builder import web_search_node
+import app.text_rag.prompt_rules as prompt_rules
 from langchain_core.messages import HumanMessage, AIMessage
 
 
@@ -85,13 +85,16 @@ def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
 async def test_web_search_node_uses_web_search_rule():
     state = {"question": "what is trump's necktie color today", "history": []}
 
-    with patch(
-        "web_search_provider.web_search_fallback",
-        new=AsyncMock(return_value="some search result text"),
-    ), patch(
-        "main.generate_with_llm_failover",
-        new=AsyncMock(return_value="a synthesized answer"),
-    ) as mock_generate:
+    with (
+        patch(
+            "web_search_provider.web_search_fallback",
+            new=AsyncMock(return_value="some search result text"),
+        ),
+        patch(
+            "main.generate_with_llm_failover",
+            new=AsyncMock(return_value="a synthesized answer"),
+        ) as mock_generate,
+    ):
         result = await web_search_node(state)
 
         assert mock_generate.await_count == 1

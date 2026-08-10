@@ -1,7 +1,9 @@
 {
-  "dependencies": ["."],
+  "dependencies": [
+    "."
+  ],
   "graphs": {
-    "chat": "./graph_builder.py:build_graph"
+    "agent": "./app/text_rag/graph_builder.py:build_graph"
   },
   "env": ".env"
 }

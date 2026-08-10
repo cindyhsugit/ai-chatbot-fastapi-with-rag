@@ -1,6 +1,6 @@
 from unittest.mock import patch, MagicMock
 import pytest
-import vectorstore_chroma
+import app.text_rag.vectorstore_chroma as vectorstore_chroma
 
 
 @patch("vectorstore_chroma.collection")
@@ -35,9 +35,7 @@ def test_search_edge_case_k_larger_than_available_documents(mock_collection):
     # edge case: k=20 requested, but the collection only has 2 documents
     # stored — Chroma itself handles this by just returning what it has,
     # so this confirms our wrapper doesn't choke on a short result either
-    mock_collection.query.return_value = {
-        "documents": [["chunk one", "chunk two"]]
-    }
+    mock_collection.query.return_value = {"documents": [["chunk one", "chunk two"]]}
 
     result = vectorstore_chroma.search(query_embedding=[0.1, 0.2, 0.3], k=20)
 

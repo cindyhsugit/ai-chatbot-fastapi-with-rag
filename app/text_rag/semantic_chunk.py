@@ -1,7 +1,7 @@
 import time
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_huggingface import HuggingFaceEmbeddings
-import utility
+from app.utility import file_io, chunks_utils
 
 
 def split(loaded_text: str) -> list[str]:
@@ -18,7 +18,7 @@ def split(loaded_text: str) -> list[str]:
     chunks = text_splitter.create_documents([loaded_text])
 
     # Call the reusable utility function
-    chunks = utility.chunks_utils.filter_empty_chunks(chunks)
+    chunks = chunks_utils.filter_empty_chunks(chunks)
 
     chunk_texts = [c.page_content for c in chunks]
     end = time.time()

@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
-import main
-import prompt_rules
+import app.main as main
+import app.text_rag.prompt_rules as prompt_rules
 import asyncio
 from langchain_core.messages import HumanMessage, AIMessage
 

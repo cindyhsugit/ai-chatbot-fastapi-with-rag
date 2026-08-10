@@ -1,11 +1,12 @@
 import logging
-from logging_config import setup_logging
+from app.logging_config import setup_logging
 import pytest
-import rag_tasks
+import app.text_rag.rag_tasks as rag_tasks
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
+
 
 def test_setup_logging_happy_path():
     # happy path: calling setup_logging() configures the root logger
@@ -56,6 +57,7 @@ def test_missing_file_raises(tmp_path, monkeypatch):
 
     with pytest.raises(SystemExit, match="Input file not found"):
         rag_tasks.safely_open_input_file()
+
 
 # Covers line 139: existing tests pass a real file or a missing path, but never
 # a directory. When INPUT_FILE points at a folder, is_dir() is True and this
