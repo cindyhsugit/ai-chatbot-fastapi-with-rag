@@ -34,20 +34,13 @@ import web_search_provider
 import prompt_rules
 import graph_builder
 import rag_tasks
-import utility.unify_response_content
+import utility
 
 # setup
 load_dotenv("apiKey.env")
 load_dotenv(".env")
 
 import os
-
-# depreacated with /chat
-# OpenAI client
-# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-# OpenAI async client
-# async_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 
 # set up logs
 setup_logging()

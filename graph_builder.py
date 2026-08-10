@@ -12,13 +12,11 @@ from langgraph.graph.message import add_messages
 import rag_tasks
 import prompt_rules
 import web_search_provider
-from reranker_hf import rerank
+import reranker_hf
+import config
 
 # Setup
 load_dotenv()
-
-# relevant threshold to be considered to use context
-RERANK_SCORE_THRESHOLD = 0.0
 
 
 class ChatState(TypedDict):
@@ -46,7 +44,7 @@ def retrieve_node(state: ChatState) -> dict:
 def rerank_node(state: ChatState) -> dict:
     question = state["question"]
     retrieved_chunks = state["retrieved_chunks"]
-    reranked = rag_tasks.rerank_with_onnx(question, retrieved_chunks)
+    reranked = reranker_hf.rerank_with_onnx(question, retrieved_chunks)
 
     # top score drives the threshold decision in the next node
     top_score = reranked[0][1] if reranked else 0.0
@@ -59,7 +57,7 @@ def rerank_node(state: ChatState) -> dict:
 
 # keep routing logic lives in its own small separate function
 def score_threshold_router(state: ChatState) -> str:
-    if state["score"] > 0:
+    if state["score"] > config.RERANK_SCORE_THRESHOLD:
         return "generate_with_context"
     else:
         return "generate_without_context"
