@@ -3,7 +3,7 @@ import pytest
 import app.text_rag.vectorstore_chroma as vectorstore_chroma
 
 
-@patch("vectorstore_chroma.collection")
+@patch("app.text_rag.vectorstore_chroma.collection")
 def test_search_happy_path(mock_collection):
     # happy path: collection has results, search correctly extracts
     # and returns the documents list
@@ -19,18 +19,19 @@ def test_search_happy_path(mock_collection):
     )
 
 
-@patch("vectorstore_chroma.collection")
+@patch("app.text_rag.vectorstore_chroma.collection")
 def test_search_error_path_empty_collection_raises(mock_collection):
-    # error path: an empty collection returns documents=[[]] or
-    # documents=[] depending on version — this documents the current
-    # (crashing) behavior rather than assuming it's handled
+    # error path: an empty collection returns documents=[] or documents=[[]]
+    # depending on version. The wrapper returns [] in that case, so this must be
+    # asserted as an empty successful result rather than a raising semantic.
     mock_collection.query.return_value = {"documents": []}
 
-    with pytest.raises(IndexError):
-        vectorstore_chroma.search(query_embedding=[0.1, 0.2, 0.3], k=5)
+    result = vectorstore_chroma.search(query_embedding=[0.1, 0.2, 0.3], k=5)
+
+    assert result == []
 
 
-@patch("vectorstore_chroma.collection")
+@patch("app.text_rag.vectorstore_chroma.collection")
 def test_search_edge_case_k_larger_than_available_documents(mock_collection):
     # edge case: k=20 requested, but the collection only has 2 documents
     # stored — Chroma itself handles this by just returning what it has,

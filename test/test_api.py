@@ -101,7 +101,7 @@ def test_langgraphchat_endpoint_empty_message_returns_400():
 
 
 @pytest.mark.asyncio
-@patch("main.graph.ainvoke", new_callable=AsyncMock)
+@patch("app.main.graph.ainvoke", new_callable=AsyncMock)
 async def test_langgraphchat_homer_favorite_food(mock_ainvoke):
     mock_ainvoke.return_value = {
         "reply": "Based on the provided context, Homer Simpson's favorite food is broccoli casserole.",

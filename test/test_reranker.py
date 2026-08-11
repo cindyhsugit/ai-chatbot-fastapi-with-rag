@@ -1,4 +1,4 @@
-from app.text_rag.reranker_hf import rerank
+import app.text_rag.reranker_hf as reranker_hf
 import pytest
 import app.text_rag.rag_tasks as rag_tasks
 import torch
@@ -15,7 +15,7 @@ def test_rerank_happy_path():
         "The weather in Springfield is often sunny.",
         "Homer Simpson's favorite food is broccoli casserole.",
     ]
-    result = rerank(query, candidates)
+    result = reranker_hf.rerank(query, candidates)
 
     assert isinstance(result, list)
     assert len(result) > 0
@@ -26,7 +26,7 @@ def test_rerank_happy_path():
 def test_rerank_error_path_empty_candidates():
     # error path: no candidates to rank at all — should return an
     # empty list, not crash
-    result = rerank("any question", [])
+    result = reranker_hf.rerank("any question", [])
     assert result == []
 
 
@@ -40,7 +40,7 @@ def test_rerank_edge_case_all_irrelevant_candidates():
         "Stock prices rose sharply today.",
         "The capital of France is Paris.",
     ]
-    result = rerank(query, candidates, top_k=2)
+    result = reranker_hf.rerank(query, candidates, top_k=2)
 
     assert isinstance(result, list)
     assert len(result) == 2  # returns both, even though neither is relevant
@@ -51,16 +51,13 @@ def test_calculate_max_length_uses_chunk_size_overlap_and_query_margin():
         def encode(self, text):
             return text.split()
 
-    chunk_size = 500
-    chunk_overlap = 50
     sample_text = "The quick brown fox jumps over the lazy dog. " * 15
     sample_tokens = len(sample_text.split())
     chars_per_token = len(sample_text) / sample_tokens
-    expected = int(((chunk_size + chunk_overlap) / chars_per_token + 20) * 1.15)
+    expected = int(((len(sample_text) / chars_per_token) + 20) * 1.15)
 
-    result = rag_tasks.calculate_max_length(
-        chunk_size,
-        chunk_overlap,
+    result = reranker_hf.calculate_max_length(
+        sample_text,
         DummyTokenizer(),
     )
 
@@ -75,6 +72,9 @@ def test_rerank_with_onnx_returns_top_result_first_for_tensor_logits():
     ]
 
     class DummyTokenizer:
+        def encode(self, text):
+            return text.split()
+
         def __call__(
             self,
             pairs,
@@ -93,10 +93,10 @@ def test_rerank_with_onnx_returns_top_result_first_for_tensor_logits():
             return SimpleNamespace(logits=torch.tensor([[0.2], [0.8]]))
 
     with (
-        patch.object(rag_tasks, "tokenizer", DummyTokenizer()),
-        patch.object(rag_tasks, "onnx_model", DummyOnnxModel()),
+        patch.object(reranker_hf, "tokenizer", DummyTokenizer()),
+        patch.object(reranker_hf, "onnx_model", DummyOnnxModel()),
     ):
-        result = rag_tasks.rerank_with_onnx(query, candidates, top_k=2)
+        result = reranker_hf.rerank_with_onnx(query, candidates, top_k=2)
 
     assert len(result) == 2
     assert result[0][0] == "Homer Simpson's favorite food is broccoli casserole."
@@ -113,6 +113,9 @@ def test_rerank_with_onnx_numpy_scores_fallback_raises():
     ]
 
     class DummyTokenizer:
+        def encode(self, text):
+            return text.split()
+
         def __call__(
             self,
             pairs,
@@ -131,8 +134,8 @@ def test_rerank_with_onnx_numpy_scores_fallback_raises():
             return SimpleNamespace(logits=np.array([[0.2], [0.8]]))
 
     with (
-        patch.object(rag_tasks, "tokenizer", DummyTokenizer()),
-        patch.object(rag_tasks, "onnx_model", DummyOnnxModel()),
+        patch.object(reranker_hf, "tokenizer", DummyTokenizer()),
+        patch.object(reranker_hf, "onnx_model", DummyOnnxModel()),
     ):
         with pytest.raises(ValueError, match="can only convert an array of size 1"):
-            rag_tasks.rerank_with_onnx(query, candidates, top_k=1)
+            reranker_hf.rerank_with_onnx(query, candidates, top_k=1)

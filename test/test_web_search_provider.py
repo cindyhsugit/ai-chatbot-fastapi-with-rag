@@ -8,7 +8,7 @@ import app.text_rag.prompt_rules as prompt_rules
 from langchain_core.messages import HumanMessage, AIMessage
 
 
-@patch("web_search_provider.tavily_client")
+@patch("app.providers.web_search_provider.tavily_client")
 def test_web_search_fallback_happy_path(mock_tavily):
     # happy path: Tavily returns real results with title + content
     mock_tavily.search.return_value = {
@@ -29,7 +29,7 @@ def test_web_search_fallback_happy_path(mock_tavily):
     assert "Homer Simpson - Wikipedia" in result  # source label included
 
 
-@patch("web_search_provider.tavily_client")
+@patch("app.providers.web_search_provider.tavily_client")
 def test_web_search_fallback_error_path_tavily_throws(mock_tavily):
     # error path: Tavily itself raises (network error, bad API key,
     # rate limit) — fails soft, returns "" instead of crashing the pipeline
@@ -51,7 +51,7 @@ def test_web_search_fallback_error_path_tavily_throws(mock_tavily):
         {},
     ],
 )
-@patch("web_search_provider.tavily_client")
+@patch("app.providers.web_search_provider.tavily_client")
 def test_web_search_fallback_empty_results_returns_empty_string(
     mock_tavily, tavily_response
 ):
@@ -62,7 +62,7 @@ def test_web_search_fallback_empty_results_returns_empty_string(
     assert result == ""
 
 
-@patch("web_search_provider.tavily_client")
+@patch("app.providers.web_search_provider.tavily_client")
 def test_web_search_fallback_edge_case_results_with_empty_content(mock_tavily):
     # edge case: Tavily succeeds and returns a result, but its "content"
     # field is blank/whitespace-only — should be skipped, not included
@@ -87,11 +87,11 @@ async def test_web_search_node_uses_web_search_rule():
 
     with (
         patch(
-            "web_search_provider.web_search_fallback",
+            "app.providers.web_search_provider.web_search_fallback",
             new=AsyncMock(return_value="some search result text"),
         ),
         patch(
-            "main.generate_with_llm_failover",
+            "app.main.generate_with_llm_failover",
             new=AsyncMock(return_value="a synthesized answer"),
         ) as mock_generate,
     ):
@@ -116,7 +116,8 @@ async def test_web_search_node_no_results_returns_fallback_message():
     state = {"question": "some obscure question", "history": []}
 
     with patch(
-        "web_search_provider.web_search_fallback", new=AsyncMock(return_value=None)
+        "app.providers.web_search_provider.web_search_fallback",
+        new=AsyncMock(return_value=None),
     ):
         result = await web_search_node(state)
 

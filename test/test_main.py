@@ -14,7 +14,7 @@ async def test_generate_with_llm_failover_happy_path():
 
     mock_llm = AsyncMock()
     mock_llm.ainvoke = AsyncMock(return_value=mock_response)
-    with patch("main.backup_llm", mock_llm):
+    with patch("app.main.backup_llm", mock_llm):
         result = await main.generate_with_llm_failover("promptstr", messages=[])
 
     assert result == "hello back"
@@ -26,6 +26,6 @@ async def test_generate_with_llm_failover_openai_fails_uses_gemini():
     mock_llm = AsyncMock()
     mock_llm.ainvoke = AsyncMock(side_effect=Exception("all providers down"))
 
-    with patch("main.backup_llm", mock_llm):
+    with patch("app.main.backup_llm", mock_llm):
         with pytest.raises(Exception, match="all providers down"):
             await main.generate_with_llm_failover("promptstr", messages=[])

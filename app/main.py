@@ -48,11 +48,6 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 #  tells FastAPI where the HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# deprecatd with /chat
-# store chat history, list of dictionaries
-# history = []
-# session_store: dict[str, list] = {}
-
 
 # data models
 class ChatRequest(BaseModel):

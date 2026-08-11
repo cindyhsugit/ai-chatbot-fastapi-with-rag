@@ -10,8 +10,14 @@ import app.text_rag.reranker_hf as reranker_hf
 
 def test_retrieve_happy_path():
     with (
-        patch("rag_tasks.get_embedding", return_value=[0.1, 0.2, 0.3]),
-        patch("vectorstore_chroma.search", return_value=["chunk1", "chunk2"]),
+        patch(
+            "app.text_rag.embeddings_hf.get_embedding",
+            return_value=[0.1, 0.2, 0.3],
+        ),
+        patch(
+            "app.text_rag.vectorstore_chroma.search",
+            return_value=["chunk1", "chunk2"],
+        ),
     ):
         result = rag_tasks.retrieve("what is homer's favorite food")
 
@@ -26,8 +32,11 @@ def test_retrieve_whitespace_question_raises():
 
 def test_retrieve_empty_chroma_results():
     with (
-        patch("rag_tasks.get_embedding", return_value=[0.1, 0.2, 0.3]),
-        patch("vectorstore_chroma.search", return_value=[]),
+        patch(
+            "app.text_rag.embeddings_hf.get_embedding",
+            return_value=[0.1, 0.2, 0.3],
+        ),
+        patch("app.text_rag.vectorstore_chroma.search", return_value=[]),
     ):
         result = rag_tasks.retrieve("obscure question with no matches")
 
@@ -36,8 +45,14 @@ def test_retrieve_empty_chroma_results():
 
 def test_retrieve_passes_k_to_chroma_search():
     with (
-        patch("rag_tasks.get_embedding", return_value=[0.1, 0.2, 0.3]),
-        patch("vectorstore_chroma.search", return_value=[]) as mock_search,
+        patch(
+            "app.text_rag.embeddings_hf.get_embedding",
+            return_value=[0.1, 0.2, 0.3],
+        ),
+        patch(
+            "app.text_rag.vectorstore_chroma.search",
+            return_value=[],
+        ) as mock_search,
     ):
         rag_tasks.retrieve("some question", k=5)
     mock_search.assert_called_once_with(query_embedding=[0.1, 0.2, 0.3], k=5)
