@@ -270,10 +270,14 @@
       scrollToBottom();
 
       try {
+        // Construct FormData instead of JSON
+        const formData = new FormData();
+        formData.append("message", message);
+        formData.append("session_id", sessionId);
+
         const res = await fetch("/langgraphchat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, session_id: sessionId })
+          body: formData // Browser sets Content-Type to multipart/form-data automatically
         });
         const data = await res.json();
 

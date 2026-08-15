@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo Access — Simpsons RAG Chatbot</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+        :root {
+            --bg: #111217;
+            --panel: #1a1b22;
+            --panel-border: #2a2c36;
+            --text: #e8e8ec;
+            --text-dim: #8a8c99;
+            --yellow: #f5c518;
+            --purple: #8b6ce0;
+            --error: #e5484d;
+            --input-bg: #14151b;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(139, 108, 224, 0.08), transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(245, 197, 24, 0.06), transparent 40%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', -apple-system, sans-serif;
+            color: var(--text);
+            padding: 24px;
+        }
+
+        .window {
+            width: 100%;
+            max-width: 460px;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        .titlebar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #17181f;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+        }
+
+        .dot.red {
+            background: #ff5f57;
+        }
+
+        .dot.yellow {
+            background: #febc2e;
+        }
+
+        .dot.green {
+            background: #28c840;
+        }
+
+        .titlebar-path {
+            margin-left: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            color: var(--text-dim);
+        }
+
+        .content {
+            padding: 32px 28px 28px;
+        }
+
+        .eyebrow {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--purple);
+            margin: 0 0 10px 0;
+        }
+
+        h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 21px;
+            font-weight: 700;
+            line-height: 1.35;
+            margin: 0 0 12px 0;
+            color: var(--text);
+        }
+
+        h1 .accent {
+            color: var(--yellow);
+        }
+
+        .desc {
+            font-size: 13.5px;
+            line-height: 1.6;
+            color: var(--text-dim);
+            margin: 0 0 26px 0;
+        }
+
+        .desc code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--input-bg);
+            padding: 1px 6px;
+            border-radius: 4px;
+            color: var(--purple);
+            font-size: 12.5px;
+        }
+
+        .error-banner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(229, 72, 77, 0.1);
+            border: 1px solid rgba(229, 72, 77, 0.35);
+            color: var(--error);
+            font-size: 13px;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11.5px;
+            letter-spacing: 0.04em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            padding: 11px 12px;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        input[type="text"]::placeholder {
+            color: #4d4f5c;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--purple);
+            box-shadow: 0 0 0 3px rgba(139, 108, 224, 0.15);
+        }
+
+        input#keyword {
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.03em;
+        }
+
+        button {
+            margin-top: 8px;
+            width: 100%;
+            background: var(--yellow);
+            color: #1a1500;
+            border: none;
+            border-radius: 6px;
+            padding: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13.5px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            transition: transform 0.1s ease, background 0.15s ease;
+        }
+
+        button:hover {
+            background: #ffd438;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:focus-visible,
+        input:focus-visible {
+            outline: 2px solid var(--purple);
+            outline-offset: 2px;
+        }
+
+        .foot {
+            margin-top: 22px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #55575f;
+            text-align: center;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            button {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="window">
+        <div class="titlebar">
+            <div class="dot red"></div>
+            <div class="dot yellow"></div>
+            <div class="dot green"></div>
+            <div class="titlebar-path">~/hero-rag/demo-login</div>
+        </div>
+
+        <div class="content">
+            <p class="eyebrow">Portfolio Demo</p>
+            <h1>Simpsons RAG Chatbot <span class="accent">::</span> Access</h1>
+            <p class="desc">
+                A production CRAG pipeline &mdash; hybrid retrieval, ONNX-optimized reranking, multi-turn memory.
+                Enter the access keyword to try it live. Keyword is listed on my resume / LinkedIn / cover letter.
+            </p>
+
+            {% if error %}
+            <div class="error-banner">&#9888; {{ error }}</div>
+            {% endif %}
+
+            <form method="post" action="/demo-login">
+                <div class="field">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" placeholder="Jane Doe" required maxlength="100">
+                </div>
+                <div class="field">
+                    <label for="company">Company</label>
+                    <input type="text" id="company" name="company" placeholder="Acme Corp" required maxlength="100">
+                </div>
+                <div class="field">
+                    <label for="keyword">Access keyword</label>
+                    <input type="text" id="keyword" name="keyword" placeholder="enter keyword" required maxlength="50"
+                        autocomplete="off">
+                </div>
+                <button type="submit">Enter demo &rarr;</button>
+            </form>
+
+            <p class="foot">no login required &middot; access resets after 2 hours</p>
+        </div>
+    </div>
+
+</body>
+
+</html>

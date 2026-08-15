@@ -1,3 +1,7 @@
+import os
+import time
+from pathlib import Path
+
 # Standard library
 from typing import TypedDict, Annotated
 
@@ -7,13 +11,17 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph.message import add_messages
+from langchain_community.retrievers import BM25Retriever
 
 # Local modules
-from app.text_rag import rag_tasks
 from app.text_rag import prompt_rules
 from app.providers import web_search_provider
 from app.text_rag import reranker_hf
-from app import config
+import app.text_rag.embeddings_hf as embeddings_hf
+import app.config as config
+from app.text_rag import vectorstore_chroma
+from app.text_rag import chunking_strategy
+from app.utility import file_io
 
 # Setup
 load_dotenv()
@@ -35,7 +43,49 @@ class ChatState(TypedDict):
 def retrieve_node(state: ChatState) -> dict:
 
     question = state["question"]
-    retrieved_chunks = rag_tasks.retrieve(question, 10)
+
+    question_embedding = embeddings_hf.get_embedding(question)
+
+    target_k = 5
+    pool_k = 15
+    start = time.time()
+    chroma_pool = vectorstore_chroma.search(
+        query_embedding=question_embedding, k=pool_k
+    )
+
+    # print(f"-- Chroma results ({len(chroma_pool)}):")
+    # for r in chroma_pool:
+    #     print(f"   {r[:80]}")
+
+    bm25_retriever.k = pool_k
+    bm25_docs = bm25_retriever.invoke(question)
+    bm25_pool = [doc.page_content for doc in bm25_docs][:pool_k]
+
+    # print(f"-- BM25 results ({len(bm25_pool )}):")
+    # for r in bm25_pool:
+    #     print(f"   {r[:80]}")
+
+    seen = set()
+    retrieved_chunks = []
+
+    def fill_from(pool, count_needed):
+        filled = []
+        for candidate in pool:
+            if len(filled) >= count_needed:
+                break
+            if candidate not in seen:
+                seen.add(candidate)
+                filled.append(candidate)
+        return filled
+
+    chroma_chunks = fill_from(chroma_pool, target_k)
+    bm25_chunks = fill_from(bm25_pool, target_k)
+    retrieved_chunks = chroma_chunks + bm25_chunks
+    end = time.time()
+    print(
+        f"-- Chroma contributed: {len(chroma_chunks)}, BM25 contributed: {len(bm25_chunks)}, total: {len(retrieved_chunks)}"
+    )
+    print(f"-- Dual retrieve Time: {end-start:.2f}s")
 
     return {"retrieved_chunks": retrieved_chunks}
 
@@ -192,3 +242,22 @@ if __name__ == "__main__":
     debug_graph = build_graph(MemorySaver())
     print(debug_graph.get_graph().draw_ascii())
     debug_graph.get_graph().draw_mermaid_png(output_file_path="graph_diagram.png")
+else:
+    # Loading
+    input_dir = Path(os.getenv("INPUT_DIR"))
+
+    all_chunks = []
+    for filepath in sorted(input_dir.glob("*.md")):
+        loaded_text = file_io.safely_open_input_file(str(filepath))
+        chunks = chunking_strategy.get_sem_fs_chunk(loaded_text)
+
+        all_chunks.extend(chunks)
+
+    # Embedding
+    embeddings = embeddings_hf.embed_chunks(all_chunks)
+
+    # Indexing
+    vectorstore_chroma.add_documents(embeddings, all_chunks)
+
+    # BM25 index — same chunks, no re-chunking
+    bm25_retriever = BM25Retriever.from_texts(all_chunks)

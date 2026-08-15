@@ -4,10 +4,12 @@ import time
 import logging
 
 # Third-party: FastAPI
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Form, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi import Depends
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 # Third-party: Langgraph / LangChain
@@ -20,11 +22,15 @@ from dotenv import load_dotenv
 from app.logging_config import setup_logging
 from pathlib import Path
 from app.providers import openai_provider, gemini_provider
-from app.providers import web_search_provider
-from app.text_rag import prompt_rules
 from app.text_rag import graph_builder
-from app.text_rag import rag_tasks
+
+from app.utility import chroma_sync
+from app.utility import rate_limit
+from app.utility import access_gate
 from app.utility import file_io, chunks_utils, unify_response_content
+
+# check for stale data and clean if needed
+chroma_sync.verify_and_clean_chroma()
 
 # setup
 load_dotenv("apiKey.env")
@@ -37,16 +43,21 @@ setup_logging()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
 # creates the actual web app
 app = FastAPI()
 
 # This finds the folder where main.py lives
 BASE_DIR = Path(__file__).resolve().parent
 
+# Read debug mode from environment (defaults to False if not set)
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+
 # When the browser asks for /static/..., serve files from the static folder
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 #  tells FastAPI where the HTML template files are stored. FastAPI’s docs show Jinja2Templates being used exactly for this purpose
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.state.limiter = rate_limit.limiter
 
 
 # data models
@@ -59,8 +70,41 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-# use langgraph built in fallbacks methods
-backup_llm = openai_provider.openai_llm.with_fallbacks([gemini_provider.gemini_llm])
+if DEBUG_MODE:
+    print("🛠️ DEBUG_MODE is ON: Routing all traffic to Gemini (Saving OpenAI costs).")
+    # Use Gemini exclusively during local debugging
+    backup_llm = gemini_provider.gemini_llm
+else:
+    # Production / Normal mode: OpenAI primary with Gemini fallback
+    backup_llm = openai_provider.openai_llm.with_fallbacks([gemini_provider.gemini_llm])
+
+
+@app.get("/demo-login")
+async def demo_login_page(request: Request):
+    return templates.TemplateResponse(
+        request=request, name="demo_login.html", context={"error": None}
+    )
+
+
+@app.post("/demo-login")
+async def demo_login_submit(
+    request: Request,
+    name: str = Form(...),
+    company: str = Form(...),
+    keyword: str = Form(...),
+):
+    if not access_gate.check_keyword(keyword):
+        return templates.TemplateResponse(
+            request=request,
+            name="demo_login.html",
+            context={
+                "error": "Incorrect keyword. Check the demo instructions and try again."
+            },
+        )
+    access_gate.log_visitor(name, company, request)
+    response = RedirectResponse(url="/langgraph", status_code=303)
+    response.set_cookie("demo_access", "granted", max_age=60 * 60 * 2)
+    return response
 
 
 # home page route
@@ -101,13 +145,20 @@ def healthAPIEndpoint():
 
 
 @app.post("/langgraphchat")
-async def langgraphchat(request: ChatRequest):
-    session_id = request.session_id
+@rate_limit.limiter.limit("5/minute")
+async def langgraphchat(
+    request: Request,
+    session_id: str = Form(...),
+    message: str = Form(...),
+):
+
     # this becomes the thread_id for the checkpointer later
+
+    rate_limit.enforce_session_interval(session_id)
 
     # this is the starting state dict of the graph.
     initial_state = {
-        "question": request.message,
+        "question": message,
         "history": [],
         "session_id": session_id,
         "retrieved_chunks": [],
