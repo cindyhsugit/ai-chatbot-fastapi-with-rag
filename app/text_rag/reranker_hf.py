@@ -86,18 +86,21 @@ def rerank_with_onnx(
        # sort the arriving chunk by length first
        sorted_chunks = sorted(retrieved_chunks, key=lambda c: len(c))
 
-        # batch size 5 is 0.01s faster than size 2
+       # batch size 5 is 0.01s faster than size 2
        batch_size = 5
        all_scored = []
 
        for i in range(0, len(sorted_chunks), batch_size):
               batch_chunks = sorted_chunks[i : i + batch_size]
               pairs = [[query, candidate] for candidate in batch_chunks]
-       
-              batch_max_tokens = max(
-                     calculate_max_length(candidate, tokenizer)
-                     for candidate in batch_chunks
-              )
+                
+              lengths = []
+              for candidate in batch_chunks:
+                length = calculate_max_length(candidate, tokenizer)
+                #print(f"chunk len={len(candidate)} chars, calc_max_length={length}, preview={candidate[:50]!r}")
+                lengths.append(length)
+
+              batch_max_tokens = max(lengths)
 
     #fmt:off
     # Tokenize all pairs together efficiently
@@ -110,6 +113,9 @@ def rerank_with_onnx(
               )
     #fmt:on
 
+              #print(f"batch {i}: input_ids shape = {inputs['input_ids'].shape}")  
+                # prints batch 5: input_ids shape = torch.Size([5, 213])
+            
             # Run inference with the ONNX model
               with torch.no_grad():
                     outputs = onnx_model(**inputs)

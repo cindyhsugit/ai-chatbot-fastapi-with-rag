@@ -113,7 +113,7 @@ async def demo_login_submit(
 def home(request: Request):
     #  loads index.html and sends it to the browser
     return templates.TemplateResponse(
-        request=request, name="index_langgraph.html", context={}
+        request=request, name="demo_login.html", context={}
     )
 
 

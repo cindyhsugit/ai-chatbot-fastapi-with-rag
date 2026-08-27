@@ -8,3 +8,5 @@ __pycache__/
 chroma_data/
 *.sqlite3
 *.bin
+
+data/simpsons_*.csv

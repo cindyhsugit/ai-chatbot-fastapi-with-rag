@@ -11,6 +11,7 @@ load_dotenv("apikey.env")
 
 gemini_llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash",
+    max_retries=2,
     google_api_key=os.environ.get("GEMINI_API_KEY"),
     temperature=0,
 ).with_retry(

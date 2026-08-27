@@ -236,6 +236,24 @@ Requires `OPENAI_API_KEY`, `GEMINI_API_KEY`, `TAVILY_API_KEY`, and
 `LANGSMITH_API_KEY` set as environment variables (or in an `.env` /
 `apiKey.env` file).
 
+## Security & Hardening
+
+### Secrets management
+Production secrets (OpenAI, Gemini, Tavily, LangSmith API keys) are stored in
+**Google Secret Manager** and mounted as environment variables at Cloud Run
+deploy time, rather than living in a `.env` file or being passed directly in
+deploy commands.
+
+### Rate limiting
+`slowapi` enforces per-IP and per-session request limits on the chat endpoint
+(`app/utility/rate_limit.py`), guarding against rapid-fire or bot-style traffic
+hitting the LLM-calling routes.
+
+### Availability
+The live demo is enabled on request to control cost and exposure — reach out
+for a live walkthrough, or see the architecture and benchmark sections above
+for a full picture of the system.
+
 ## Repo structure
 
 ```

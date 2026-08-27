@@ -3,6 +3,7 @@ import shutil
 import hashlib
 import json
 import logging
+import gc
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def verify_and_clean_chroma():
             "🔄 Document changes detected (or missing DB). Cleaning Chroma database..."
         )
         if os.path.exists(CHROMA_DIR):
+            gc.collect()
             shutil.rmtree(CHROMA_DIR)
             print(f"Deleted old {CHROMA_DIR}/")
 

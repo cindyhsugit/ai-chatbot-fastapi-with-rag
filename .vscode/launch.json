@@ -7,7 +7,7 @@
             "request": "launch",
             "module": "uvicorn",
             "args": [
-                "app.main:app",
+                "app.main:app"
             ],
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",

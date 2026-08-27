@@ -1,9 +1,14 @@
 import time
+from functools import lru_cache
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.utility import file_io, chunks_utils
+
+embeddings_model = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
 
 
 def semantic_chunk(loaded_text: str) -> list[str]:
@@ -12,7 +17,7 @@ def semantic_chunk(loaded_text: str) -> list[str]:
     using utility, and returns a list of raw string chunks with timing.
     """
     text_splitter = SemanticChunker(
-        HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2"),
+        embeddings_model,
         breakpoint_threshold_type="interquartile",
     )
 
