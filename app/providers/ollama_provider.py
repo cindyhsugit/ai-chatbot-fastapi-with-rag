@@ -1,6 +1,7 @@
 import ollama
 from pathlib import Path
 from app.utility import db_service
+import time
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DB_PATH = PROJECT_ROOT / "simpsons.db"
@@ -43,10 +44,15 @@ Rules:
   specifically mentions them.
 - Use JOINs, GROUP BY, ORDER BY, WHERE, aggregate functions as needed.
 - Include a LIMIT (default 50) unless the question is asking for a count or aggregate.
-"""
+- For questions about a character's job, employment, or where they work, filter on
+  characters.occupation directly. Do NOT infer employment by joining through
+  script_lines/locations — a character speaking a line at a location does not
+  mean they work there.
+  """
 
 
 async def generate_sql_with_llm(question: str) -> str:
+    t0 = time.time()
     response = ollama.chat(
         model="gemma4:e4b",
         messages=[
@@ -55,4 +61,5 @@ async def generate_sql_with_llm(question: str) -> str:
         ],
         options={"temperature": 0},
     )
+    print(f"SQL generation (gemma4:e4b): {time.time() - t0:.2f}s")
     return response["message"]["content"]

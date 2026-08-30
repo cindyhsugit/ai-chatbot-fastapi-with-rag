@@ -28,9 +28,20 @@ from app.text_rag import chunking_strategy
 from app.utility import file_io
 from app.utility import sql_regex_check
 from app.utility import reciprocal_rank_fusion
+from app.utility import sql_validator
+import logging
 
 # Setup
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DB_PATH = PROJECT_ROOT / "simpsons.db"
+
+# Load schema once at startup
+SIMPSONS_SCHEMA = sql_validator.load_db_schema(DB_PATH)
 
 
 class ChatState(TypedDict):
@@ -44,6 +55,7 @@ class ChatState(TypedDict):
     score: float  # top cross-encoder reranker score from retrieved_chunks
     reply: str
     query_route: str
+    sql_result_data: list
 
 
 # 1 node determine query can be converted to SQL search or regular semantic
@@ -53,11 +65,11 @@ def modal_node(state: ChatState) -> dict:
     start = time.time()
     if sql_regex_check.is_sql_intent(question):
         end = time.time()
-        # print(f"Fast Regex Determinant Time: {end - start:.4f}s -- is_sql : True")
+        print(f"Fast Regex Determinant Time: {end - start:.4f}s -- is_sql : True")
         return {"query_route": "sql"}
 
     response = ollama.chat(
-        model="llama3.2:3b",
+        model="gemma4:e4b",
         messages=[
             {
                 "role": "system",
@@ -80,7 +92,7 @@ def modal_node(state: ChatState) -> dict:
     is_sql = "yes" in answer
 
     end = time.time()
-    # print(f"local LLM modal determin Time: {end-start:.2f}s -- is_sql : {is_sql}")
+    print(f"local LLM modal determin Time: {end-start:.2f}s -- is_sql : {is_sql}")
 
     return {"query_route": "sql" if is_sql else "semantic"}
 
@@ -143,32 +155,47 @@ def retrieve_node(state: ChatState) -> dict:
 
 
 # 2 level SQL Processing Node
+# generate → validate → execute → fallback
 async def sql_search_node(state: ChatState) -> dict:
     question = state["question"]
 
     # 1. Generate SQL via LLM or helper function
     raw_sql = await ollama_provider.generate_sql_with_llm(question)
     print(f"-- raw_sql : {raw_sql}")
-    # 2. Execute against database
-    # Example placeholder response:
-    sql_result_data = f"Executed SQL lookup for: {question}"
 
-    history = state["history"]
-    prompt = f"Answer the user query based on this database result:\n{sql_result_data}"
-    messages = history + [HumanMessage(content=question)]
+    t0 = time.time()
+    is_valid, safe_sql, error = sql_validator.validate_sql(raw_sql, SIMPSONS_SCHEMA)
+    print(f"sql_validator time : {time.time() - t0:.2f}s")
+    if is_valid:
+        print(f"Executing: {safe_sql}")
+    # Output: Executing: SELECT * FROM users WHERE age > 21 LIMIT 50
+    else:
+        print(f"Validation failed: {error}")
+        return {"sql_result_data": None}
 
-    from app.main import generate_with_llm_failover
+    # 3. Execute against database
+    db_uri = f"file:{DB_PATH.as_posix()}?mode=ro"
+    conn = sqlite3.connect(db_uri, uri=True)
+    try:
+        # Enable row_factory to map column names to keys
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(safe_sql)
+        rows = cursor.fetchall()
+        # Convert all rows into standard Python dictionaries
+        sql_result_data = [dict(row) for row in rows]
+        print(f"sql_result_data: {sql_result_data}")
+        return {
+            "sql_result_data": sql_result_data,
+        }
+    except Exception as e:
+        logger.error(f"SQL execution failed for question '{question}': {e}")
 
-    reply = await generate_with_llm_failover(prompt=prompt, messages=messages)
-
-    return {
-        "reply": reply,
-        "sql_results": sql_result_data,
-        "history": [
-            HumanMessage(content=question),
-            AIMessage(content=reply),
-        ],
-    }
+        return {
+            "sql_result_data": None,
+        }
+    finally:
+        conn.close()
 
 
 # 3rd node
@@ -198,11 +225,17 @@ def not_in_context_router(state: ChatState) -> str:
     if state["reply"] == "NO_KNOWLEDGE":
         return "web_search_node"
     else:
-        return "END"
+        return END
 
 
 def sql_or_semantic_router(state: ChatState) -> str:
     return state["query_route"]
+
+
+def after_sql_router(state: ChatState) -> str:
+    if state.get("sql_result_data") is None:
+        return "web_search_node"
+    return "generate_sql_answer_node"
 
 
 # 4th node after retrieval node
@@ -258,6 +291,45 @@ async def generate_without_context_node(state: ChatState) -> dict:
     }
 
 
+# feed sql result data to LLM to get natural language result
+async def generate_sql_answer_node(state: ChatState) -> dict:
+    question = state["question"]
+    sql_data = state["sql_result_data"]
+    history = state.get("history", [])
+
+    system_prompt = (
+        "You are a helpful assistant. Formulate a direct, clear natural language answer "
+        "to the user's question based strictly on the provided SQL query results. "
+        "Do not invent facts or mention database column names explicitly."
+    )
+
+    user_content = f"Question: {question}\nSQL Result Data: {sql_data}"
+
+    start = time.time()
+    # Call local Ollama model (gemma4:e4b)
+    response = ollama.chat(
+        model="gemma4:e4b",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        options={"temperature": 0},
+    )
+
+    end = time.time()
+    print(f"--gemma4:e4b generate_sql_answer_node {end-start:.2f}s")
+
+    reply = response["message"]["content"].strip()
+
+    return {
+        "reply": reply,
+        "history": [
+            HumanMessage(content=question),
+            AIMessage(content=reply),
+        ],
+    }
+
+
 # 5th node after generation node
 async def web_search_node(state: ChatState) -> dict:
     question = state["question"]
@@ -293,8 +365,9 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
     graph.add_node("modal_node", modal_node)
     graph.add_node("retrieve_node", retrieve_node)
     graph.add_node("sql_search_node", sql_search_node)
+    graph.add_node("generate_sql_answer_node", generate_sql_answer_node)
     graph.add_node("rerank_node", rerank_node)
-    graph.add_edge("retrieve_node", "rerank_node")
+
     graph.add_node("generate_with_context", generate_with_context_node)
     graph.add_node("generate_without_context", generate_without_context_node)
     graph.add_node("web_search_node", web_search_node)
@@ -325,10 +398,19 @@ def build_graph(checkpointer=None) -> CompiledStateGraph:
         not_in_context_router,
         {"web_search_node": "web_search_node", "END": END},
     )
+    graph.add_conditional_edges(
+        "sql_search_node",  # the node whose output you're routing from
+        after_sql_router,  # the function that decides where to go
+        {
+            "generate_sql_answer_node": "generate_sql_answer_node",
+            "web_search_node": "web_search_node",
+        },
+    )
 
+    graph.add_edge("retrieve_node", "rerank_node")
+    graph.add_edge("generate_with_context", END)
+    graph.add_edge("generate_sql_answer_node", END)
     graph.add_edge("web_search_node", END)
-    # SQL Node terminates at END
-    graph.add_edge("sql_search_node", END)
 
     # Compile the graph into a runnable application
     # attach a checkpointer (like MemorySaver) to enable
