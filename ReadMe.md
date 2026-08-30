@@ -1,6 +1,6 @@
 ## Architecture Diagram
 
-![LangGraph flow](screenshots/graph_diagram_v3.png)
+![LangGraph flow](screenshots/graph_diagram_v4.png)
 
 ## Demo Trace
 
@@ -13,10 +13,10 @@ See the [high-level architecture](screenshots/diagram_hierarchy.md) and
 
 A retrieval-augmented chatbot built from primitives, then migrated to
 [LangGraph](https://github.com/langchain-ai/langgraph) for orchestration,
-conversational memory, and conditional routing between retrieval, trained
-knowledge, and live web search.
+conversational memory, and conditional routing across semantic retrieval,
+trained knowledge, live web search, and structured SQL lookups.
 
-** [Cloud Run deployment] Live demo:** [ai-chatbot-with-rag-1016078012439.us-west1.run.app](https://ai-chatbot-with-rag-1016078012439.us-west1.run.app)
+**[Cloud Run deployment] Live demo:** [ai-chatbot-with-rag-1016078012439.us-west1.run.app](https://ai-chatbot-with-rag-1016078012439.us-west1.run.app)
 
 > Looking for the original, from-scratch implementation (no LangChain/LangGraph)?
 > See [README_v1_manual_rag.md](README_v1_manual_rag.md) — kept live on Render
@@ -26,37 +26,70 @@ knowledge, and live web search.
 
 ## Architecture
 
-This app implements a three-tier CRAG (Corrective RAG) pipeline as a LangGraph
-`StateGraph`:
+The graph now starts with a **modal router node** that classifies each
+question as either a semantic-retrieval question or a structured-data
+question, before anything else runs:
 
 ```
-question
-   │
-   ▼
-retrieve_node  (ChromaDB vector search, top-20)
-   │
-   ▼
-rerank_node  (cross-encoder reranker, top-3 + score)
-   │
-   ├─ score ≥ threshold ──► generate_with_context_node ──► reply
-   │
-   └─ score < threshold ──► generate_without_context_node
+                              __start__
                                   │
-                                  ├─ confident answer ──► reply
-                                  │
-                                  └─ NO_KNOWLEDGE ──► web_search_node ──► reply
+                                  ▼
+                             modal_node
+                          (semantic vs sql)
+                     ┌────────────┴────────────┐
+                semantic                       sql
+                     │                          │
+                     ▼                          ▼
+              retrieve_node               sql_search_node
+                     │                     ┌────┴────┐
+                     ▼                 results     results
+               rerank_node              found      = None
+              ┌──────┴──────┐              │          │
+         score ≥ thr   score < thr         ▼          ▼
+              │              │      generate_sql_   web_search_node
+              ▼              ▼      answer_node          │
+     generate_with_    generate_without_                 │
+     context_node          context_node                  │
+              │        ┌──────┴──────┐                   │
+              │   confident      NO_KNOWLEDGE             │
+              │        │              │                   │
+              │        ▼              └──────────┬────────┘
+              │      reply                        ▼
+              │                            web_search_node
+              │                                    │
+              └────────────────┬───────────────────┘
+                                ▼
+                             __end__
 ```
 
+- **Routing:** `modal_node` — a lightweight local classification step, run on
+  the same local model as SQL generation (`gemma4:e4b` via Ollama), that
+  decides whether a question needs semantic retrieval (character lore,
+  episode summaries, general knowledge) or structured SQL lookup (counts,
+  aggregates, filters over the relational schema), before the graph commits
+  to either path. An earlier version used a second, smaller model
+  (`llama3.2:3b`) for routing specifically, but Ollama's model
+  loading/unloading overhead when switching between two different local
+  models on every request outweighed the benefit of a smaller router model —
+  consolidating onto a single already-loaded model removed that overhead
+  entirely.
 - **Retrieval:** HuggingFace embeddings (`all-MiniLM-L6-v2`) + ChromaDB vector
   store (`retrieve_node`)
 - **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows top-20
   retrieved chunks down to the top 3 most relevant (`rerank_node`) — split
   into its own node so LangSmith traces retrieval and reranking latency
   separately
+- **SQL path:** `sql_search_node` generates SQLite against the Simpsons
+  schema using a local model (`gemma4:e4b` via Ollama), validates it, and
+  executes it read-only. A successful, non-empty result routes to
+  `generate_sql_answer_node` to produce a natural-language answer grounded
+  in the actual query result. If the query fails validation, fails to
+  execute, or returns no data, the graph falls back to `web_search_node`
+  rather than surfacing a dead end or a hallucinated guess.
 - **Generation:** Two-tier LLM failover — OpenAI primary, Gemini fallback, via
   LangChain's `with_fallbacks()`
-- **Fallback:** Tavily web search when neither local context nor trained
-  knowledge can answer the question
+- **Fallback:** Tavily web search when local context, trained knowledge, or
+  the SQL path all come up empty
 - **Memory:** LangGraph's `MemorySaver` checkpointer + `add_messages` reducer
   give the graph multi-turn conversational memory, keyed by `session_id`
 
@@ -69,14 +102,56 @@ LangGraph to get:
 
 - **Explicit state management** — a typed `ChatState` schema instead of
   threading dicts through function calls by hand
-- **Conditional routing** — graph edges replace nested if/else fallback logic
+- **Conditional routing** — graph edges replace nested if/else fallback logic,
+  now spanning both the semantic and SQL paths
 - **Built-in conversational memory** — `MemorySaver` + `add_messages` replaced
   a hand-rolled `session_store` dict, removing a redundant/competing source of
   truth for conversation history
 - **Provider abstraction** — `ChatOpenAI` / `ChatGoogleGenerativeAI` replaced
   custom message-format converters for OpenAI and Gemini
 
-## Notable debugging story
+## Text-to-SQL
+
+A local model (`gemma4:e4b` via Ollama) translates natural-language questions
+into SQLite queries against a four-table schema (`characters`, `episodes`,
+`locations`, `script_lines`), kept local specifically to avoid API cost on a
+narrow, mechanical translation task.
+
+**Prompt discipline over example sprawl.** Early on, every failing question
+was "fixed" by appending a new few-shot example to the generation prompt —
+which worked case by case but doesn't scale: it teaches the model memorized
+answers to specific questions rather than generalizable rules, and the prompt
+grows without bound. The fix was to distinguish two different kinds of
+knowledge and give each its own home:
+
+- **General, schema-wide rules** live once in `SQL_GENERATION_RULES` — things
+  like "SELECT statements only," "match names against `normalized_name`," and
+  column-level disambiguation guidance (e.g., questions about a character's
+  job or workplace should filter on `characters.occupation` directly, not be
+  inferred by joining through `script_lines`/`locations` — a character
+  speaking a line at a location doesn't mean they work there).
+- **Structurally new SQL patterns** (a genuinely new join shape, an
+  aggregation style not yet covered) are the only thing that earns a new
+  worked example — and even then, sparingly, since the goal is to teach a
+  pattern the model can generalize from, not to cover every possible
+  question by brute force.
+
+**SQL safety.** Every generated query passes through `sqlglot` AST validation
+before execution — no `INSERT`/`UPDATE`/`DELETE`/`DROP`/`ATTACH`/`PRAGMA`, no
+multi-statement payloads. The query then executes against a **read-only**
+SQLite connection (`file:{path}?mode=ro&uri=True`) as a second, independent
+layer — even if a malformed or malicious query somehow slipped past
+validation, the database itself is physically incapable of accepting a write
+through that connection.
+
+**Honest failure, not a disguised one.** If SQL generation, validation, or
+execution fails, the node does not fabricate a message that reads like a
+successful result — an early version of this path generated a fallback
+string that looked like real data had come back, which would have fed the
+downstream LLM (and the user) a confident, ungrounded answer. Failures now
+route explicitly to `web_search_node` instead.
+
+## Notable debugging stories
 
 **Combined retrieve+rerank node obscured the real bottleneck.** LangSmith
 traces initially showed one node's total latency without distinguishing
@@ -114,6 +189,18 @@ knowledge-gate prompt. Confirmed via five repeated runs on identical input
 (4/5 answered correctly, 1/5 hedged), then fixed by setting `temperature=0`
 on the generation model.
 
+**A syntactically valid SQL query that answered the wrong question.**
+Asked to list characters who work at the Springfield Nuclear Power Plant, the
+model generated a query joining `script_lines` and `locations` to find
+characters who had *spoken a line* at that location — which parsed, executed
+cleanly, and returned plausible-looking names, but answered a different
+question than the one asked (attendance, not employment) once a dedicated
+`occupation` column on `characters` was the actually-correct source of
+truth. No exception, no failed validation — every mechanical check passed.
+This is the class of bug that motivated separating rules from examples above,
+and motivates a dedicated SQL correctness eval (see Known Limitations) rather
+than relying on catching semantic mismatches by manual review indefinitely.
+
 **Closing the last coverage gaps with an AI coding agent.** Used Cursor
 (in Ask mode — reviewing every proposed change before applying it, not
 auto-accepting agent edits) to help close the final gaps in test coverage.
@@ -131,15 +218,16 @@ Two findings worth noting:
   the `__main__` guard — these lines needed no coverage exclusion, since
   they're normally testable in-process.
 
-
 ![Cursor coverage debugging session](screenshots/cursor_coverage_debug_annotated.png)
 
 ## Tech stack
 
 FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 `langchain-google-genai`) · ChromaDB · HuggingFace embeddings & cross-encoder
-· OpenAI API · Gemini API · Tavily · Docker · Google Cloud Run· Cursor
+· OpenAI API · Gemini API · Tavily · Ollama (`gemma4:e4b`) ·
+`sqlglot` · SQLite (read-only) · Docker · Google Cloud Run · Cursor
 (AI-assisted development)
+
 ## Performance Benchmark: PyTorch vs. ONNX Runtime
 
 Latency comparison for the cross-encoder reranking step in the RAG pipeline.
@@ -177,15 +265,16 @@ After the fix, three consecutive live requests (real queries, real ChromaDB retr
 `MAX_LENGTH` was derived automatically at startup as `165` (from `chunk_size=500`, `chunk_overlap=50`), and all three requests stayed comfortably under that ceiling with no truncation — reranking now accounts for a small, consistent fraction of total pipeline latency, with the OpenAI generation call as the dominant remaining cost.
 
 ## Testing
+
 This project uses LangSmith to trace every graph run. Each turn's
 inputs/outputs and message history are inspected via the Turns view,
-making it easy to debug multi-step agent behavior.
-![LangSmith Observability]screenshots/annotated_langsmith.jpg)
+making it easy to debug multi-step agent behavior, across both the semantic
+and SQL paths.
 
+![LangSmith Observability](screenshots/annotated_langsmith.jpg)
 
 Pytest suite with mocked provider calls, graph node unit tests, and
-integration tests exercising the compiled graph end-to-end — **100% line
-coverage across the codebase** (792 statements, 72 tests). Run with:
+integration tests exercising the compiled graph end-to-end. Run with:
 
 ```bash
 pytest --cov
@@ -220,10 +309,19 @@ python evaluation/eval_multi_turn.py
 python evaluation/eval_retrieval.py
 ```
 
-**Known limitation:** dataset size is currently small (~13 single-turn, ~9
-multi-turn examples) and there's no dedicated groundedness/faithfulness
-evaluator yet — the next addition would check that generated answers are
-actually supported by the retrieved context, not just correct by coincidence.
+**Known limitations:**
+- Dataset size is currently small (~13 single-turn, ~9 multi-turn examples)
+  and there's no dedicated groundedness/faithfulness evaluator yet — the
+  next addition would check that generated answers are actually supported by
+  the retrieved context, not just correct by coincidence.
+- The SQL path has no dedicated correctness eval yet. Query validity (does it
+  parse, does it execute) is checked today; query *correctness* (does it
+  answer the question that was actually asked, per the nuclear-plant example
+  above) is currently caught by manual review, not an automated check. A
+  planned `eval_sql_correctness.py`, following the same pattern as the
+  evaluators above, would use a small, hand-verified set of question →
+  expected-answer-description pairs, run independently of the SQL generation
+  prompt so it actually tests generalization rather than recall.
 
 ## Running locally
 
@@ -234,7 +332,8 @@ uvicorn main:app --reload
 
 Requires `OPENAI_API_KEY`, `GEMINI_API_KEY`, `TAVILY_API_KEY`, and
 `LANGSMITH_API_KEY` set as environment variables (or in an `.env` /
-`apiKey.env` file).
+`apiKey.env` file). The SQL and routing paths additionally require a local
+Ollama installation with `gemma4:e4b` pulled.
 
 ## Security & Hardening
 
@@ -243,6 +342,13 @@ Production secrets (OpenAI, Gemini, Tavily, LangSmith API keys) are stored in
 **Google Secret Manager** and mounted as environment variables at Cloud Run
 deploy time, rather than living in a `.env` file or being passed directly in
 deploy commands.
+
+### SQL safety
+Every LLM-generated SQL query passes `sqlglot` AST validation (SELECT-only,
+no destructive or schema-altering statements) before it ever reaches the
+database, and executes exclusively through a read-only SQLite connection as
+a second, independent enforcement layer — a gap in one layer doesn't mean a
+write ever reaches the database.
 
 ### Rate limiting
 `slowapi` enforces per-IP and per-session request limits on the chat endpoint
@@ -260,7 +366,13 @@ for a full picture of the system.
 main.py                 # FastAPI app, /langgraphchat endpoint
 graph_builder.py         # LangGraph StateGraph, nodes, conditional edges
 providers/                # OpenAI / Gemini LLM wrappers
-utility/                   # Cross-provider response normalization
+ollama_provider.py        # Local model calls (SQL generation, modal routing)
+utility/
+  db_service.py            # Schema introspection for SQL prompt context
+  sql_validator.py          # sqlglot-based AST validation for generated SQL
+  rate_limit.py              # slowapi configuration
+  unify_response_content.py  # Cross-provider response normalization
 scripts/                   # Standalone debugging/calibration scripts
 test/                      # Pytest suite
+evaluation/                # LangSmith eval scripts and datasets
 ```
