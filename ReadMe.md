@@ -74,7 +74,9 @@ question, before anything else runs:
   consolidating onto a single already-loaded model removed that overhead
   entirely.
 - **Retrieval:** HuggingFace embeddings (`all-MiniLM-L6-v2`) + ChromaDB vector
-  store (`retrieve_node`)
+  store (`retrieve_node`). Optional hybrid mode adds BM25 keyword search
+  alongside semantic search, fused via Reciprocal Rank Fusion — see
+  **Hybrid Retrieval: BM25 + Semantic Search** below.
 - **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows top-20
   retrieved chunks down to the top 3 most relevant (`rerank_node`) — split
   into its own node so LangSmith traces retrieval and reranking latency
@@ -86,7 +88,7 @@ question, before anything else runs:
   in the actual query result. If the query fails validation, fails to
   execute, or returns no data, the graph falls back to `web_search_node`
   rather than surfacing a dead end or a hallucinated guess.
-- **Generation:** Two-tier LLM failover — OpenAI primary, Gemini fallback, via
+- **Generation:** Two-tier LLM failover — Gemini primary, OpenAI fallback, via
   LangChain's `with_fallbacks()`
 - **Fallback:** Tavily web search when local context, trained knowledge, or
   the SQL path all come up empty
@@ -109,6 +111,30 @@ LangGraph to get:
   truth for conversation history
 - **Provider abstraction** — `ChatOpenAI` / `ChatGoogleGenerativeAI` replaced
   custom message-format converters for OpenAI and Gemini
+
+## Hybrid Retrieval: BM25 + Semantic Search
+
+In addition to semantic (embedding-based) search, the retrieval step
+supports an optional hybrid mode that adds **BM25 keyword search** run in
+parallel with the existing ChromaDB semantic search. Results from both are
+combined using **Reciprocal Rank Fusion (RRF)**, so a chunk that ranks
+highly by either keyword overlap or semantic similarity has a better chance
+of surfacing than relying on either signal alone.
+
+- **Why hybrid at all:** semantic search alone can miss exact-term matches
+  (character names, specific episode titles, precise phrasing) that a
+  keyword method would catch immediately, while BM25 alone misses
+  paraphrased or conceptually related content that has no literal word
+  overlap. Combining both closes each method's blind spot.
+- **Deduplication with backfill:** the same chunk frequently appears in both
+  the BM25 and semantic result sets (observed ~40% overlap), so the fusion
+  step deduplicates before reranking and backfills from a wider candidate
+  pool (`pool_k=15`) to keep the reranker's input set at full strength
+  rather than reranking a shrunken, overlap-thinned list.
+- **Status:** implemented and tested, but **toggled off by default** in
+  production — it's available on request (e.g., for a live demo walkthrough)
+  rather than enabled unconditionally, to keep default latency and cost
+  predictable.
 
 ## Text-to-SQL
 
@@ -224,9 +250,9 @@ Two findings worth noting:
 
 FastAPI · Python · LangGraph · LangChain (`langchain-openai`,
 `langchain-google-genai`) · ChromaDB · HuggingFace embeddings & cross-encoder
-· OpenAI API · Gemini API · Tavily · Ollama (`gemma4:e4b`) ·
-`sqlglot` · SQLite (read-only) · Docker · Google Cloud Run · Cursor
-(AI-assisted development)
+· BM25 (keyword search) · OpenAI API · Gemini API · Tavily · Ollama
+(`gemma4:e4b`) · `sqlglot` · SQLite (read-only) · Docker · Google Cloud Run ·
+Cursor (AI-assisted development)
 
 ## Performance Benchmark: PyTorch vs. ONNX Runtime
 
@@ -262,7 +288,7 @@ After the fix, three consecutive live requests (real queries, real ChromaDB retr
 | 2 | [10, 94] | 0.155s | 0.16s | 1.12s |
 | 3 | [10, 109] | 0.180s | 0.18s | 1.10s |
 
-`MAX_LENGTH` was derived automatically at startup as `165` (from `chunk_size=500`, `chunk_overlap=50`), and all three requests stayed comfortably under that ceiling with no truncation — reranking now accounts for a small, consistent fraction of total pipeline latency, with the OpenAI generation call as the dominant remaining cost.
+`MAX_LENGTH` was derived automatically at startup as `165` (from `chunk_size=500`, `chunk_overlap=50`), and all three requests stayed comfortably under that ceiling with no truncation — reranking now accounts for a small, consistent fraction of total pipeline latency, with the primary LLM generation call as the dominant remaining cost.
 
 ## Testing
 
@@ -350,29 +376,3 @@ database, and executes exclusively through a read-only SQLite connection as
 a second, independent enforcement layer — a gap in one layer doesn't mean a
 write ever reaches the database.
 
-### Rate limiting
-`slowapi` enforces per-IP and per-session request limits on the chat endpoint
-(`app/utility/rate_limit.py`), guarding against rapid-fire or bot-style traffic
-hitting the LLM-calling routes.
-
-### Availability
-The live demo is enabled on request to control cost and exposure — reach out
-for a live walkthrough, or see the architecture and benchmark sections above
-for a full picture of the system.
-
-## Repo structure
-
-```
-main.py                 # FastAPI app, /langgraphchat endpoint
-graph_builder.py         # LangGraph StateGraph, nodes, conditional edges
-providers/                # OpenAI / Gemini LLM wrappers
-ollama_provider.py        # Local model calls (SQL generation, modal routing)
-utility/
-  db_service.py            # Schema introspection for SQL prompt context
-  sql_validator.py          # sqlglot-based AST validation for generated SQL
-  rate_limit.py              # slowapi configuration
-  unify_response_content.py  # Cross-provider response normalization
-scripts/                   # Standalone debugging/calibration scripts
-test/                      # Pytest suite
-evaluation/                # LangSmith eval scripts and datasets
-```
