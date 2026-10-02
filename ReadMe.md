@@ -30,36 +30,35 @@ The graph now starts with a **modal router node** that classifies each
 question as either a semantic-retrieval question or a structured-data
 question, before anything else runs:
 
-```
-                              __start__
-                                  │
-                                  ▼
-                             modal_node
-                          (semantic vs sql)
-                     ┌────────────┴────────────┐
-                semantic                       sql
-                     │                          │
-                     ▼                          ▼
-              retrieve_node               sql_search_node
-                     │                     ┌────┴────┐
-                     ▼                 results     results
-               rerank_node              found      = None
-              ┌──────┴──────┐              │          │
-         score ≥ thr   score < thr         ▼          ▼
-              │              │      generate_sql_   web_search_node
-              ▼              ▼      answer_node          │
-     generate_with_    generate_without_                 │
-     context_node          context_node                  │
-              │        ┌──────┴──────┐                   │
-              │   confident      NO_KNOWLEDGE             │
-              │        │              │                   │
-              │        ▼              └──────────┬────────┘
-              │      reply                        ▼
-              │                            web_search_node
-              │                                    │
-              └────────────────┬───────────────────┘
-                                ▼
-                             __end__
+```mermaid
+flowchart TD
+    start([__start__]) --> modal_node["modal_node<br/>(semantic vs sql)"]
+
+    modal_node -->|semantic| embed
+    modal_node -->|sql| sql_search_node
+
+    subgraph retrieve_node["retrieve_node (hybrid retrieval)"]
+        embed["embed question"] --> chroma["ChromaDB semantic search<br/>top 15"]
+        bm25["BM25 keyword search<br/>top 15"]
+        chroma --> rrf["Reciprocal Rank Fusion<br/>rrf_k=60, top 10"]
+        bm25 --> rrf
+    end
+
+    modal_node -->|semantic| bm25
+
+    rrf --> rerank_node
+    rerank_node -->|score ≥ threshold| generate_with_context_node
+    rerank_node -->|score < threshold| generate_without_context_node
+
+    generate_with_context_node --> end_node([__end__])
+    generate_without_context_node -->|confident| end_node
+    generate_without_context_node -->|NO_KNOWLEDGE| web_search_node
+
+    sql_search_node -->|results found| generate_sql_answer_node
+    sql_search_node -->|failed / no results| web_search_node
+    generate_sql_answer_node --> end_node
+
+    web_search_node --> end_node
 ```
 
 - **Routing:** `modal_node` — a lightweight local classification step, run on
@@ -73,12 +72,13 @@ question, before anything else runs:
   models on every request outweighed the benefit of a smaller router model —
   consolidating onto a single already-loaded model removed that overhead
   entirely.
-- **Retrieval:** HuggingFace embeddings (`all-MiniLM-L6-v2`) + ChromaDB vector
-  store (`retrieve_node`). Optional hybrid mode adds BM25 keyword search
-  alongside semantic search, fused via Reciprocal Rank Fusion — see
-  **Hybrid Retrieval: BM25 + Semantic Search** below.
-- **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows top-20
-  retrieved chunks down to the top 3 most relevant (`rerank_node`) — split
+- **Retrieval:** Hybrid retrieval in `retrieve_node` — HuggingFace embeddings
+  (`all-MiniLM-L6-v2`) + ChromaDB semantic search and BM25 keyword search run
+  on every semantic request, and their ranked results are fused via
+  Reciprocal Rank Fusion — see **Hybrid Retrieval: BM25 + Semantic Search**
+  below.
+- **Reranking:** Cross-encoder (`ms-marco-MiniLM-L-6-v2`) narrows the top-10
+  fused chunks down to the top 3 most relevant (`rerank_node`) — split
   into its own node so LangSmith traces retrieval and reranking latency
   separately
 - **SQL path:** `sql_search_node` generates SQLite against the Simpsons
@@ -107,34 +107,40 @@ LangGraph to get:
 - **Conditional routing** — graph edges replace nested if/else fallback logic,
   now spanning both the semantic and SQL paths
 - **Built-in conversational memory** — `MemorySaver` + `add_messages` replaced
-  a hand-rolled `session_store` dict, removing a redundant/competing source of
-  truth for conversation history
+  a hand-rolled `session_store` dict, removing a redundant/competing source
+  of truth for conversation history
 - **Provider abstraction** — `ChatOpenAI` / `ChatGoogleGenerativeAI` replaced
   custom message-format converters for OpenAI and Gemini
 
 ## Hybrid Retrieval: BM25 + Semantic Search
 
-In addition to semantic (embedding-based) search, the retrieval step
-supports an optional hybrid mode that adds **BM25 keyword search** run in
-parallel with the existing ChromaDB semantic search. Results from both are
-combined using **Reciprocal Rank Fusion (RRF)**, so a chunk that ranks
-highly by either keyword overlap or semantic similarity has a better chance
-of surfacing than relying on either signal alone.
+The retrieval step combines two methods: **semantic (embedding-based)
+search** over ChromaDB and **BM25 keyword search**, both run on every
+semantic request. Each returns its own ranked list of candidates (`pool_k=15`
+per method), and the lists are combined using **Reciprocal Rank Fusion
+(RRF)** (`rrf_k=60`), keeping the top 10 fused chunks (`top_n=10`) as input
+to the reranker. Because RRF scores each chunk by its rank position rather
+than its raw score, a chunk that ranks highly by either keyword overlap or
+semantic similarity has a better chance of surfacing — and BM25 and
+embedding scores never have to be compared on a common scale.
 
 - **Why hybrid at all:** semantic search alone can miss exact-term matches
   (character names, specific episode titles, precise phrasing) that a
   keyword method would catch immediately, while BM25 alone misses
   paraphrased or conceptually related content that has no literal word
   overlap. Combining both closes each method's blind spot.
-- **Deduplication with backfill:** the same chunk frequently appears in both
-  the BM25 and semantic result sets (observed ~40% overlap), so the fusion
-  step deduplicates before reranking and backfills from a wider candidate
-  pool (`pool_k=15`) to keep the reranker's input set at full strength
-  rather than reranking a shrunken, overlap-thinned list.
-- **Status:** implemented and tested, but **toggled off by default** in
-  production — it's available on request (e.g., for a live demo walkthrough)
-  rather than enabled unconditionally, to keep default latency and cost
-  predictable.
+- **Overlap between methods:** the same chunk frequently appears in both
+  the BM25 and semantic result sets (observed ~40% overlap). Fusing the two
+  ranked lists with RRF handles this directly — a chunk found by both
+  methods collects a score from each and rises in the combined ranking —
+  and drawing a wider candidate pool from each method (`pool_k=15`) keeps
+  the reranker's input set at full strength (10 chunks) rather than
+  reranking a shrunken, overlap-thinned list.
+- **Evolution:** an earlier version filled results from each method
+  separately and deduplicated by hand. Replacing that with a dedicated
+  `reciprocal_rank_fusion.combine()` module simplified `retrieve_node` and
+  made the ranking logic reusable and testable on its own.
+- **Status:** enabled — runs on every semantic request.
 
 ## Text-to-SQL
 
@@ -375,4 +381,3 @@ no destructive or schema-altering statements) before it ever reaches the
 database, and executes exclusively through a read-only SQLite connection as
 a second, independent enforcement layer — a gap in one layer doesn't mean a
 write ever reaches the database.
-
