@@ -1,6 +1,6 @@
 ## Demo Trace
 
-[![Watch the demo](screenshot.png)](https://youtu.be/ZoogExU_Qo4)
+[![Watch the demo]](https://youtu.be/ZoogExU_Qo4)
 
 See the [high-level architecture](screenshots/diagram_hierarchy.md) and
 [detailed structure](screenshots/diagram_detail.md) for more.
