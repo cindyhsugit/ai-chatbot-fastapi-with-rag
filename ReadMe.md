@@ -1,7 +1,3 @@
-## Architecture Diagram
-
-![LangGraph flow](screenshots/graph_diagram_v4.png)
-
 ## Demo Trace
 
 ![RAG workflow demo](screenshots/combined_demo_annotated.png)
