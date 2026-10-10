@@ -1,6 +1,6 @@
 ## Demo Trace
 
-![RAG workflow demo](screenshots/combined_demo_annotated.png)
+[![Watch the demo](screenshot.png)](https://youtu.be/ZoogExU_Qo4)
 
 See the [high-level architecture](screenshots/diagram_hierarchy.md) and
 [detailed structure](screenshots/diagram_detail.md) for more.
